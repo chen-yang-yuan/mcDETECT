@@ -1,1 +1,1 @@
-Toy data can be downloaded at: [OneDrive](https://emory-my.sharepoint.com/:f:/r/personal/cyuan36_emory_edu/Documents/mcDETECT_tutorial_data?csf=1&web=1&e=4sx8us).
+Toy data can be downloaded at: [Dropbox](https://www.dropbox.com/scl/fo/gxt64ilg55p44iwj1dox3/AO-LRvZUQnJU9twvtaEdpcY?rlkey=bjk5dv5sqnhinblapr12wtzau&st=owdm92gz&dl=0).
