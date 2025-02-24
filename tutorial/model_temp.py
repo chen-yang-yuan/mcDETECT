@@ -4,7 +4,6 @@ import miniball
 import numpy as np
 import pandas as pd
 import scanpy as sc
-from scipy.spatial import ConvexHull
 from scipy.stats import poisson
 from sklearn.cluster import DBSCAN
 from closest import closest
