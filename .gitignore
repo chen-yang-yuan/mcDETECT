@@ -1,4 +1,5 @@
 .DS_Store
 .Rhistory
+Makefile
 tutorial/toy_data
 tutorial/__pycache__
