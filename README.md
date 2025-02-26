@@ -12,6 +12,6 @@ For more details, see our [manuscript]().<br>
 
 ## Tutorial
 
-For a step-by-step tutorial, please see [tutorial.md](tutorial/tutorial.md).<br>
+For a step-by-step tutorial, please see <a href="tutorial/tutorial.md" target="_blank">tutorial</a>.<br>
 
-Toy data used in this tutorial can be downloaded at [Dropbox](https://www.dropbox.com/scl/fo/gxt64ilg55p44iwj1dox3/AO-LRvZUQnJU9twvtaEdpcY?rlkey=bjk5dv5sqnhinblapr12wtzau&st=owdm92gz&dl=0).
+Toy data used in this tutorial can be downloaded at <a href="https://www.dropbox.com/scl/fo/gxt64ilg55p44iwj1dox3/AO-LRvZUQnJU9twvtaEdpcY?rlkey=bjk5dv5sqnhinblapr12wtzau&st=owdm92gz&dl=0" target="_blank">Dropbox</a>.
