@@ -107,7 +107,7 @@ class mcDETECT:
                 
                 # find minimum enclosing spheres
                 temp = target[labels == k]
-                temp_in_nucleus = np.sum(temp['CellComp'] == 'Nuclear')
+                temp_in_nucleus = np.sum(temp['overlaps_nucleus'])
                 temp_size = temp.shape[0]
                 temp = temp[['global_x', 'global_y', 'global_z']]
                 temp = temp.drop_duplicates()
@@ -120,7 +120,7 @@ class mcDETECT:
                 # calculate size, composition, and in-nucleus score
                 other_idx = tree.query_ball_point([center[0], center[1], center[2]], np.sqrt(r2))
                 other_trans = others.iloc[other_idx]
-                other_in_nucleus = np.sum(other_trans['CellComp'] == 'Nuclear')
+                other_in_nucleus = np.sum(other_trans['overlaps_nucleus'])
                 other_size = other_trans.shape[0]
                 other_comp = len(np.unique(other_trans['target']))
                 total_size = temp_size + other_size

@@ -16,9 +16,6 @@ sc.settings.verbosity = 0
 transcripts = pd.read_parquet("toy_data/transcripts.parquet")
 transcripts = transcripts[['cell_id', 'overlaps_nucleus', 'feature_name', 'x_location', 'y_location', 'z_location']]
 transcripts = transcripts.rename(columns = {"feature_name": "target", "x_location": "global_x", "y_location": "global_y", "z_location": "global_z"})
-CellComp = ['Nuclear' if i == 1 else 'Non-nuclear' for i in transcripts['overlaps_nucleus']]
-transcripts['CellComp'] = CellComp
-transcripts = transcripts.drop(['overlaps_nucleus'], axis = 1)
 
 # Define synaptic markers
 syn_genes = ['Snap25', 'Camk2a', 'Slc17a7', 'Vamp2', 'Syp', 'Syn1', 'Dlg4', 'Gria2', 'Gap43', 'Gria1', 'Bsn', 'Slc32a1']
