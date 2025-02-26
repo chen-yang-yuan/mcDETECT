@@ -9,3 +9,9 @@ mcDETECT is a computational framework designed to identify and profile individua
 ![mcDETECT workflow](docs/workflow.png)<br>
 
 For more details, see our [manuscript]().<br>
+
+## Tutorial
+
+For a step-by-step tutorial, please see [tutorial.md](tutorial/tutorial.md).<br>
+
+Toy data used in this tutorial can be downloaded at [Dropbox](https://www.dropbox.com/scl/fo/gxt64ilg55p44iwj1dox3/AO-LRvZUQnJU9twvtaEdpcY?rlkey=bjk5dv5sqnhinblapr12wtzau&st=owdm92gz&dl=0).
