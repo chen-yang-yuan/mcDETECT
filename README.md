@@ -32,7 +32,7 @@ Toy datasets used in this tutorial can be downloaded from [Dropbox](https://www.
 
 ## Contributing
 
-Source code: [mcDETECT_package](mcDETECT_package/).<br>
+Source code: [mcDETECT_package](mcDETECT_package).<br>
 
 We are continuing adding new features. Bug reports or feature requests are welcome.<br>
 
