@@ -236,17 +236,3 @@ sphere
 ```python
 a = mc.profile(sphere)
 ```
-
-
-```python
-a
-```
-
-
-
-
-    AnnData object with n_obs × n_vars = 1279 × 5006
-        obs: 'global_x', 'global_y', 'global_z', 'layer_z', 'sphere_r', 'size', 'comp', 'in_nucleus', 'gene', 'synapse_id'
-        var: 'genes'
-
-
