@@ -14,7 +14,7 @@ mcDETECT is a computational framework designed to identify and profile individua
 
 ### Python
 
-Python support packages: anndata, miniball, numpy, pandas, scanpy, scipy, shapely, sklearn
+Python support packages: anndata, miniball, numpy, pandas, scanpy, scipy, shapely, sklearn.
 
 ### Versions the software has been tested on
 
