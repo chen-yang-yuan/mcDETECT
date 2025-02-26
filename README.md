@@ -8,10 +8,26 @@ mcDETECT is a computational framework designed to identify and profile individua
 
 ![mcDETECT workflow](docs/workflow.png)<br>
 
-For more details, see our [manuscript]().<br>
+## Installation
+
+
 
 ## Tutorial
 
-For a step-by-step tutorial, please see [tutorial](tutorial/tutorial.md).<br>
+For a step-by-step tutorial on `mcDETECT`, please see [tutorial](tutorial/tutorial.md).<br>
 
-Toy data used in this tutorial can be downloaded at [Dropbox]("https://www.dropbox.com/scl/fo/gxt64ilg55p44iwj1dox3/AO-LRvZUQnJU9twvtaEdpcY?rlkey=bjk5dv5sqnhinblapr12wtzau&st=owdm92gz&dl=0").
+Toy datasets used in this tutorial can be downloaded from [Dropbox](https://www.dropbox.com/scl/fo/gxt64ilg55p44iwj1dox3/AO-LRvZUQnJU9twvtaEdpcY?rlkey=bjk5dv5sqnhinblapr12wtzau&st=owdm92gz&dl=0).
+
+## System Requirements
+
+### Python
+
+Python support packages: anndata, miniball, numpy, pandas, scanpy, scipy, shapely, sklearn
+
+### Versions the software has been tested on
+
+Environment 1:
+
+* System: macOS Sequoia 15.3.1 (Apple M2 Max)
+* Python: 3.11.4
+* Python packages: anndata = 0.9.1, miniball = 1.2.0, numpy = 1.24.3, pandas = 2.0.2, scanpy = 1.10.3, scipy = 1.10.1, shapely = 2.0.1, sklearn = 1.2.2
