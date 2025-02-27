@@ -15,9 +15,10 @@ Authors: Chenyang Yuan, Krupa Patel, Hongshun Shi, Hsiao-Lin V. Wang, Feng Wang,
 
 ### 1. Installation
 
+The detailed installation procedure can be found in [Installation](../README.md/#installation). Here I directly install the package by running:
 
-```python
-from mcDETECT import mcDETECT
+```bash
+python3 -m pip install mcDETECT
 ```
 
 
