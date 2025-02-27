@@ -143,21 +143,6 @@ transcripts.head()
 
 
 
-
-```python
-print(transcripts.head())
-```
-
-                  cell_id  overlaps_nucleus  ...     global_y   global_z
-    163006771  fgdhmaei-1                 0  ...  2021.468750  15.125000
-    163006772  UNASSIGNED                 0  ...  2043.625000  15.781250
-    163006773  UNASSIGNED                 0  ...  2085.984375  16.578125
-    163006774  hieeideh-1                 1  ...  2163.453125  17.281250
-    163006775  fghnlpdi-1                 1  ...  2149.406250  17.625000
-    
-    [5 rows x 6 columns]
-
-
 * Synaptic markers (list)
 
 
