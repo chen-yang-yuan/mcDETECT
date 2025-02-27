@@ -21,15 +21,27 @@ Now you can install the current release of `mcDETECT` by the following three way
 
 ### PyPI
 
+Directly install the package from PyPI:
+
 ```bash
-pip3 install MorphLink
 # Note: you need to make sure that the pip is for python3
+pip3 install mcDETECT
 
-# or we could install MorphLink by
-python3 -m pip install MorphLink
+# If you do not have permission (when you get a permission denied error), you should install mcDETECT by:
+pip3 install --user mcDETECT
 
-# If you do not have permission (when you get a permission denied error), you should install MorphLink by
-pip3 install --user MorphLink
+# Or you could install mcDETECT by:
+python3 -m pip install mcDETECT
+```
+
+### GitHub
+
+Download the package from Github and install it locally:
+
+```bash
+git clone https://github.com/chen-yang-yuan/mcDETECT
+cd mcDETECT/mcDETECT_package
+python3 setup.py install --user
 ```
 
 ## Dependencies
