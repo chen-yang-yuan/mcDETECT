@@ -23,7 +23,7 @@ class mcDETECT:
         self.nc_genes = nc_genes                # list, string, all negative controls
         self.eps = eps                          # numeric, searching radius epsilon
         self.minspl = minspl                    # integer, manually select min_samples, i.e., no automatic parameter selection
-        self.grid_len = grid_len                # numeric, length of grids
+        self.grid_len = grid_len                # numeric, length of grids for computing the tissue area
         self.cutoff_prob = cutoff_prob          # numeric, cutoff probability in parameter selection for min_samples
         self.alpha = alpha                      # numeric, scaling factor in parameter selection for min_samples
         self.low_bound = low_bound              # integer, lower bound in parameter selection for min_samples
@@ -36,34 +36,33 @@ class mcDETECT:
         self.nc_thr = nc_thr                    # numeric, threshold for negative control filtering
     
     
-    # [INNER] calculate tissue area, input for poisson_select()
-    def effect_area(self):
-        
-        # construct grids
+    # [INNER] construct grids, input for tissue_area()
+    def construct_grid(self, grid_len = None):
+        if grid_len is None:
+            grid_len = self.grid_len
         x_min, x_max = np.min(self.transcripts['global_x']), np.max(self.transcripts['global_x'])
         y_min, y_max = np.min(self.transcripts['global_y']), np.max(self.transcripts['global_y'])
-        x_min = np.floor(x_min / self.grid_len) * self.grid_len
-        x_max = np.ceil(x_max / self.grid_len) * self.grid_len
-        y_min = np.floor(y_min / self.grid_len) * self.grid_len
-        y_max = np.ceil(y_max / self.grid_len) * self.grid_len
-
-        # compute number of bins
-        x_bins = np.arange(x_min, x_max + self.grid_len, self.grid_len)
-        y_bins = np.arange(y_min, y_max + self.grid_len, self.grid_len)
-
-        # count transcripts in each grid cell
-        hist, _, _ = np.histogram2d(self.transcripts['global_x'], self.transcripts['global_y'], bins=[x_bins, y_bins])
-
-        # count nonzero grids and compute effective area
-        effective_area = np.count_nonzero(hist) * (self.grid_len ** 2)
-        
-        return effective_area
+        x_min = np.floor(x_min / grid_len) * grid_len
+        x_max = np.ceil(x_max / grid_len) * grid_len
+        y_min = np.floor(y_min / grid_len) * grid_len
+        y_max = np.ceil(y_max / grid_len) * grid_len
+        x_bins = np.arange(x_min, x_max + grid_len, grid_len)
+        y_bins = np.arange(y_min, y_max + grid_len, grid_len)
+        return x_bins, y_bins
+    
+    
+    # [INNER] calculate tissue area, input for poisson_select()
+    def tissue_area(self):
+        x_bins, y_bins = self.construct_grid(grid_len = None)
+        hist, _, _ = np.histogram2d(self.transcripts['global_x'], self.transcripts['global_y'], bins = [x_bins, y_bins])
+        area = np.count_nonzero(hist) * (self.grid_len ** 2)
+        return area
     
     
     # [INNER] calculate optimal min_samples, input for dbscan()
     def poisson_select(self, gene_name):
         num_trans = np.sum(self.transcripts['target'] == gene_name)
-        bg_density = num_trans / self.effect_area()
+        bg_density = num_trans / self.tissue_area()
         cutoff_density = poisson.ppf(self.cutoff_prob, mu = self.alpha * bg_density * (np.pi * self.eps ** 2))
         optimal_m = int(max(cutoff_density, self.low_bound))
         return optimal_m
@@ -98,7 +97,6 @@ class mcDETECT:
             db = DBSCAN(eps = self.eps, min_samples = min_spl, algorithm = 'kd_tree').fit(X)
             labels = db.labels_
             n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-            n_noise = list(labels).count(-1)
             
             # iterate over all aggregations
             sphere_x, sphere_y, sphere_z, layer_z, sphere_r, sphere_size, sphere_comp, sphere_score = [], [], [], [], [], [], [], []
@@ -136,7 +134,7 @@ class mcDETECT:
                 sphere_size.append(total_size)
                 sphere_comp.append(total_comp)
                 sphere_score.append(local_score)
-
+            
             # basic features for all spheres from each synaptic marker
             sphere = pd.DataFrame(list(zip(sphere_x, sphere_y, sphere_z, layer_z, sphere_r, sphere_size, sphere_comp, sphere_score)),
                                   columns = ['sphere_x', 'sphere_y', 'sphere_z', 'layer_z', 'sphere_r', 'size', 'comp', 'in_nucleus'])
@@ -171,7 +169,7 @@ class mcDETECT:
         points = pd.concat([points_a, points_b])
         points = points[['global_x', 'global_y', 'global_z']]
         return points
-
+    
     
     def remove_overlaps(self, set_a, set_b):
         
@@ -182,12 +180,10 @@ class mcDETECT:
         idx_b = make_rtree(set_b)
         for i, sphere_a in set_a.iterrows():
             center_a_3D = (sphere_a.sphere_x, sphere_a.sphere_y, sphere_a.sphere_z)
-            bounds_a = (
-                sphere_a.sphere_x - sphere_a.sphere_r,
-                sphere_a.sphere_y - sphere_a.sphere_r,
-                sphere_a.sphere_x + sphere_a.sphere_r,
-                sphere_a.sphere_y + sphere_a.sphere_r
-            )
+            bounds_a = (sphere_a.sphere_x - sphere_a.sphere_r,
+                        sphere_a.sphere_y - sphere_a.sphere_r,
+                        sphere_a.sphere_x + sphere_a.sphere_r,
+                        sphere_a.sphere_y + sphere_a.sphere_r)
             possible_overlaps = idx_b.intersection(bounds_a)
 
             # search 3D overlaps within possible overlaps
@@ -207,12 +203,12 @@ class mcDETECT:
 
                     # operations on dataframes
                     if c0:
-                        if c1 and c1_1:         # keep A and remove B
+                        if c1 and c1_1:                             # keep A and remove B
                             set_b.drop(index = j, inplace = True)
-                        elif c1 and not c1_1:   # replace A with B and remove B
+                        elif c1 and not c1_1:                       # replace A with B and remove B
                             set_a.loc[i] = set_b.loc[j]
                             set_b.drop(index = j, inplace = True)
-                        elif not c1 and c2_1:   # replace A with new sphere and remove B
+                        elif not c1 and c2_1:                       # replace A with new sphere and remove B
                             points_union = np.array(self.find_points(sphere_a, sphere_b))
                             new_center, new_radius = miniball.get_bounding_ball(points_union, epsilon=1e-8)
                             set_a.loc[i, 'sphere_x'] = new_center[0]
@@ -220,8 +216,7 @@ class mcDETECT:
                             set_a.loc[i, 'sphere_z'] = new_center[2]
                             set_a.loc[i, 'sphere_r'] = self.s * new_radius
                             set_b.drop(index = j, inplace = True)
-
-        # return output
+        
         set_a = set_a.reset_index(drop = True)
         set_b = set_b.reset_index(drop = True)
         return set_a, set_b
@@ -277,16 +272,15 @@ class mcDETECT:
             elif len(nc_idx) / temp['size'] < self.nc_thr:
                 pass_idx[i] = 2
         sphere = sphere_low[np.array(pass_idx) != 0]
+        sphere = sphere.reset_index(drop = True)
         return sphere
     
     
-    # [MAIN] dataframe
+    # [MAIN] dataframe, metadata of identified synapses
     def detect(self):
         
-        # multi-channel DBSCAN
         _, data_low, data_high = self.dbscan()
         
-        # merge spheres
         print("Merging spheres...")
         sphere_low, sphere_high = self.merge_sphere(data_low), self.merge_sphere(data_high)
         

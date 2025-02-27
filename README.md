@@ -14,7 +14,7 @@ mcDETECT is a computational framework designed to identify and profile individua
 
 ### Python
 
-Python support packages: anndata, miniball, numpy, pandas, scanpy, scipy, shapely, sklearn.
+Python support packages: anndata, miniball, numpy, pandas, rtree, scanpy, scipy, shapely, sklearn.
 
 ### Versions the software has been tested on
 
@@ -22,7 +22,7 @@ Environment 1:
 
 * System: macOS Sequoia 15.3.1 (Apple M2 Max)
 * Python: 3.11.4
-* Python packages: anndata = 0.9.1, miniball = 1.2.0, numpy = 1.24.3, pandas = 2.0.2, scanpy = 1.10.3, scipy = 1.10.1, shapely = 2.0.1, sklearn = 1.2.2
+* Python packages: anndata = 0.9.1, miniball = 1.2.0, numpy = 1.24.3, pandas = 2.0.2, rtree = 1.2.0, scanpy = 1.10.3, scipy = 1.10.1, shapely = 2.0.1, sklearn = 1.2.2
 
 ## Tutorial
 
