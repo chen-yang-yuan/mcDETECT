@@ -143,6 +143,147 @@ transcripts.head()
 
 
 
+
+```python
+transcripts
+```
+
+
+
+
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>cell_id</th>
+      <th>overlaps_nucleus</th>
+      <th>target</th>
+      <th>global_x</th>
+      <th>global_y</th>
+      <th>global_z</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>163006771</th>
+      <td>fgdhmaei-1</td>
+      <td>0</td>
+      <td>A1cf</td>
+      <td>5994.734375</td>
+      <td>2021.468750</td>
+      <td>15.125000</td>
+    </tr>
+    <tr>
+      <th>163006772</th>
+      <td>UNASSIGNED</td>
+      <td>0</td>
+      <td>A2m</td>
+      <td>5763.109375</td>
+      <td>2043.625000</td>
+      <td>15.781250</td>
+    </tr>
+    <tr>
+      <th>163006773</th>
+      <td>UNASSIGNED</td>
+      <td>0</td>
+      <td>A2m</td>
+      <td>5951.984375</td>
+      <td>2085.984375</td>
+      <td>16.578125</td>
+    </tr>
+    <tr>
+      <th>163006774</th>
+      <td>hieeideh-1</td>
+      <td>1</td>
+      <td>Aatf</td>
+      <td>5757.593750</td>
+      <td>2163.453125</td>
+      <td>17.281250</td>
+    </tr>
+    <tr>
+      <th>163006775</th>
+      <td>fghnlpdi-1</td>
+      <td>1</td>
+      <td>Aatf</td>
+      <td>5969.406250</td>
+      <td>2149.406250</td>
+      <td>17.625000</td>
+    </tr>
+    <tr>
+      <th>...</th>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+    </tr>
+    <tr>
+      <th>185456895</th>
+      <td>fikpmdpm-1</td>
+      <td>0</td>
+      <td>Vtn</td>
+      <td>6502.234375</td>
+      <td>2760.000000</td>
+      <td>14.859375</td>
+    </tr>
+    <tr>
+      <th>185456896</th>
+      <td>UNASSIGNED</td>
+      <td>0</td>
+      <td>Wapl</td>
+      <td>6731.968750</td>
+      <td>2854.625000</td>
+      <td>21.890625</td>
+    </tr>
+    <tr>
+      <th>185456897</th>
+      <td>fikpmdpm-1</td>
+      <td>0</td>
+      <td>Wnt4</td>
+      <td>6503.468750</td>
+      <td>2754.656250</td>
+      <td>16.156250</td>
+    </tr>
+    <tr>
+      <th>185456898</th>
+      <td>fikpmdpm-1</td>
+      <td>1</td>
+      <td>Ywhaz</td>
+      <td>6501.953125</td>
+      <td>2752.484375</td>
+      <td>14.609375</td>
+    </tr>
+    <tr>
+      <th>185456899</th>
+      <td>fikpmdpm-1</td>
+      <td>1</td>
+      <td>Zmpste24</td>
+      <td>6501.359375</td>
+      <td>2752.156250</td>
+      <td>14.562500</td>
+    </tr>
+  </tbody>
+</table>
+<p>8019192 rows × 6 columns</p>
+</div>
+
+
+
 * Synaptic markers (list)
 
 
