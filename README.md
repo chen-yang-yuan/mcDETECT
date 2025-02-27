@@ -19,7 +19,7 @@ platform.python_version()
 
 Now you can install the current release of `mcDETECT` by the following three ways:
 
-#### PyPI
+### 1. PyPI
 
 Directly install the package from PyPI:
 
@@ -34,7 +34,7 @@ pip3 install --user mcDETECT
 python3 -m pip install mcDETECT
 ```
 
-#### GitHub
+### 2. GitHub
 
 Download the package from Github and install it locally:
 
@@ -46,11 +46,11 @@ python3 setup.py install --user
 
 ## Dependencies
 
-#### Python
+### Python
 
 Python support packages: anndata, miniball, numpy, pandas, rtree, scanpy, scipy, shapely, sklearn.
 
-#### Versions the software has been tested on
+### Versions the software has been tested on
 
 Environment 1:
 
