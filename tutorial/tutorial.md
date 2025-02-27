@@ -1,11 +1,15 @@
 # mcDETECT Tutorial
-
 Authors: Chenyang Yuan, Krupa Patel, Hongshun Shi, Hsiao-Lin V. Wang, Feng Wang, Ronghua Li, Yangping Li, Victor G. Corces, Hailing Shi, Sulagna Das, Jindan Yu, Peng Jin, Bing Yao* and Jian Hu*
 
 ### Outline
 1. [Installation](#1-installation)
 2. [Import Python modules](#2-import-python-modules)
 3. [Read in data](#3-read-in-data)
+4. [Parameter settings](#4-parameter-settings)
+5. [Synapse detection](#5-synapse-detection)
+6. [Spatial domain assignment](#6-spatial-domain-assignment)
+7. [Synapse transcriptome profiling](#7-synapse-transcriptome-profiling)
+8. [Synapse subtyping](#8-synapse-subtyping)
 
 ### 1. Installation
 
@@ -41,11 +45,15 @@ nc_genes = pd.read_csv('toy_data/negative_controls.csv')
 nc_genes = list(nc_genes['Gene'])
 ```
 
+### 4. Parameter settings
+
 
 ```python
 mc = mcDETECT(type = "Xenium", transcripts = transcripts, syn_genes = syn_genes, nc_genes = nc_genes, eps = 1.5, grid_len = 1, cutoff_prob = 0.95, alpha = 5, low_bound = 3,
               size_thr = 5, in_nucleus_thr = (0.5, 0.5), l = 1, rho = 0.2, s = 1, nc_top = 20, nc_thr = 0.1)
 ```
+
+### 5. Synapse detection
 
 
 ```python
@@ -245,7 +253,13 @@ sphere
 
 
 
+### 6. Spatial domain assignment
+
+### 7. Synapse transcriptome profiling
+
 
 ```python
 a = mc.profile(sphere)
 ```
+
+### 8. Synapse subtyping
