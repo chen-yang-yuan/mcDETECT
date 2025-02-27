@@ -10,7 +10,11 @@ mcDETECT is a computational framework designed to identify and profile individua
 
 ## Installation
 
-ddddddd
+To install `mcDETECT` package you must make sure that your python version is over 3.6. If you don’t know the version of python you can check it by:
+
+```python
+fff
+```
 
 ## Dependencies
 
