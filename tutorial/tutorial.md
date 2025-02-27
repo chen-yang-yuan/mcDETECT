@@ -4,12 +4,12 @@ Authors: Chenyang Yuan, Krupa Patel, Hongshun Shi, Hsiao-Lin V. Wang, Feng Wang,
 
 ### Outline
 1. [Installation](#installation)
-2. [Import modules](#import-python-modules)
+2. [Import Python modules](#import-python-modules)
 3. [Read in data](#read-in-data)
 
-### Installation
+### 1. Installation
 
-### Import Python modules
+### 2. Import Python modules
 
 
 ```python
@@ -24,7 +24,7 @@ warnings.filterwarnings("ignore")
 sc.settings.verbosity = 0
 ```
 
-### Read in data
+### 3. Read in data
 
 
 ```python
