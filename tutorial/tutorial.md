@@ -1,6 +1,15 @@
 # mcDETECT Tutorial
 
-#### Authors: Chenyang Yuan, Krupa Patel, Hongshun Shi, Hsiao-Lin V. Wang, Feng Wang, Ronghua Li, Yangping Li, Victor G. Corces, Hailing Shi, Sulagna Das, Jindan Yu, Peng Jin, Bing Yao* and Jian Hu*
+Authors: Chenyang Yuan, Krupa Patel, Hongshun Shi, Hsiao-Lin V. Wang, Feng Wang, Ronghua Li, Yangping Li, Victor G. Corces, Hailing Shi, Sulagna Das, Jindan Yu, Peng Jin, Bing Yao* and Jian Hu*
+
+### Outline
+1. [Installation](#1.-Installation)
+2. [Import modules](#2.-Import-Python-modules)
+3. [Read in data](#3.-Read-in-data)
+
+### 1. Installation
+
+### 2. Import Python modules
 
 
 ```python
@@ -14,6 +23,8 @@ import warnings
 warnings.filterwarnings("ignore")
 sc.settings.verbosity = 0
 ```
+
+### 3. Read in data
 
 
 ```python
