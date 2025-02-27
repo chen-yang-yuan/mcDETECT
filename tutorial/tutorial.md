@@ -19,7 +19,6 @@ Authors: Chenyang Yuan, Krupa Patel, Hongshun Shi, Hsiao-Lin V. Wang, Feng Wang,
 ```python
 import matplotlib.colors as clr
 import matplotlib.pyplot as plt
-import scanpy as sc
 
 from model_temp import *
 
