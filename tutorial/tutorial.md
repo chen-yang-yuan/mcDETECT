@@ -35,6 +35,7 @@ import miniball
 import numpy as np
 import pandas as pd
 import scanpy as sc
+import tabulate
 from mcDETECT import mcDETECT
 
 import warnings
@@ -59,88 +60,16 @@ We need to rename some columns of the transcript file to combat
 ```python
 transcripts = transcripts[['cell_id', 'overlaps_nucleus', 'feature_name', 'x_location', 'y_location', 'z_location']]
 transcripts = transcripts.rename(columns = {"feature_name": "target", "x_location": "global_x", "y_location": "global_y", "z_location": "global_z"})
-transcripts.head()
+print(transcripts.head().to_markdown())
 ```
 
-
-
-
-<div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>cell_id</th>
-      <th>overlaps_nucleus</th>
-      <th>target</th>
-      <th>global_x</th>
-      <th>global_y</th>
-      <th>global_z</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>163006771</th>
-      <td>fgdhmaei-1</td>
-      <td>0</td>
-      <td>A1cf</td>
-      <td>5994.734375</td>
-      <td>2021.468750</td>
-      <td>15.125000</td>
-    </tr>
-    <tr>
-      <th>163006772</th>
-      <td>UNASSIGNED</td>
-      <td>0</td>
-      <td>A2m</td>
-      <td>5763.109375</td>
-      <td>2043.625000</td>
-      <td>15.781250</td>
-    </tr>
-    <tr>
-      <th>163006773</th>
-      <td>UNASSIGNED</td>
-      <td>0</td>
-      <td>A2m</td>
-      <td>5951.984375</td>
-      <td>2085.984375</td>
-      <td>16.578125</td>
-    </tr>
-    <tr>
-      <th>163006774</th>
-      <td>hieeideh-1</td>
-      <td>1</td>
-      <td>Aatf</td>
-      <td>5757.593750</td>
-      <td>2163.453125</td>
-      <td>17.281250</td>
-    </tr>
-    <tr>
-      <th>163006775</th>
-      <td>fghnlpdi-1</td>
-      <td>1</td>
-      <td>Aatf</td>
-      <td>5969.406250</td>
-      <td>2149.406250</td>
-      <td>17.625000</td>
-    </tr>
-  </tbody>
-</table>
-</div>
-
+    |           | cell_id    |   overlaps_nucleus | target   |   global_x |   global_y |   global_z |
+    |----------:|:-----------|-------------------:|:---------|-----------:|-----------:|-----------:|
+    | 163006771 | fgdhmaei-1 |                  0 | A1cf     |    5994.73 |    2021.47 |    15.125  |
+    | 163006772 | UNASSIGNED |                  0 | A2m      |    5763.11 |    2043.62 |    15.7812 |
+    | 163006773 | UNASSIGNED |                  0 | A2m      |    5951.98 |    2085.98 |    16.5781 |
+    | 163006774 | hieeideh-1 |                  1 | Aatf     |    5757.59 |    2163.45 |    17.2812 |
+    | 163006775 | fghnlpdi-1 |                  1 | Aatf     |    5969.41 |    2149.41 |    17.625  |
 
 
 
