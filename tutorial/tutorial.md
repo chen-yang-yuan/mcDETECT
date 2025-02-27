@@ -15,6 +15,38 @@ Authors: Chenyang Yuan, Krupa Patel, Hongshun Shi, Hsiao-Lin V. Wang, Feng Wang,
 
 ### 1. Installation
 
+
+```python
+from mcDETECT import mcDETECT
+```
+
+
+```python
+mc = mcDETECT()
+```
+
+
+    ---------------------------------------------------------------------------
+
+    TypeError                                 Traceback (most recent call last)
+
+    Cell In[4], line 1
+    ----> 1 mc.mcDETECT()
+
+
+    TypeError: mcDETECT.__init__() missing 3 required positional arguments: 'type', 'transcripts', and 'syn_genes'
+
+
+
+```python
+import anndata
+import math
+import miniball
+import numpy as np
+import pandas as pd
+import scanpy as sc
+```
+
 ### 2. Import Python modules
 
 Besides required Python packages for `mcDETECT` listed in [Dependencies](../README.md/#dependencies), this tutorial also needs the following packages:
@@ -24,26 +56,10 @@ Besides required Python packages for `mcDETECT` listed in [Dependencies](../READ
 import matplotlib.colors as clr
 import matplotlib.pyplot as plt
 
-from model_temp import *
-
 import warnings
 warnings.filterwarnings("ignore")
 sc.settings.verbosity = 0
 ```
-
-
-```python
-import rtree
-
-rtree.__version__
-```
-
-
-
-
-    '1.2.0'
-
-
 
 ### 3. Read in data
 
@@ -267,6 +283,23 @@ sphere
 </table>
 <p>1279 rows × 9 columns</p>
 </div>
+
+
+
+
+```python
+a, b = mc.construct_grid()
+```
+
+
+```python
+len(b)
+```
+
+
+
+
+    1001
 
 
 
