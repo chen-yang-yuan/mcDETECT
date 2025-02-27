@@ -1,3 +1,8 @@
+# mcDETECT Tutorial
+
+#### Authors: Chenyang Yuan, Krupa Patel, Hongshun Shi, Hsiao-Lin V. Wang, Feng Wang, Ronghua Li, Yangping Li, Victor G. Corces, Hailing Shi, Sulagna Das, Jindan Yu, Peng Jin, Bing Yao* and Jian Hu*
+
+
 ```python
 import matplotlib.colors as clr
 import matplotlib.pyplot as plt
