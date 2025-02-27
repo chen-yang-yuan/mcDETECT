@@ -22,23 +22,6 @@ from mcDETECT import mcDETECT
 
 
 ```python
-mc = mcDETECT()
-```
-
-
-    ---------------------------------------------------------------------------
-
-    TypeError                                 Traceback (most recent call last)
-
-    Cell In[4], line 1
-    ----> 1 mc.mcDETECT()
-
-
-    TypeError: mcDETECT.__init__() missing 3 required positional arguments: 'type', 'transcripts', and 'syn_genes'
-
-
-
-```python
 import anndata
 import math
 import miniball
@@ -93,198 +76,10 @@ mc = mcDETECT(type = "Xenium", transcripts = transcripts, syn_genes = syn_genes,
 sphere = mc.detect()
 ```
 
-    1 out of 12 genes processed!
-    2 out of 12 genes processed!
-    3 out of 12 genes processed!
-    4 out of 12 genes processed!
-    5 out of 12 genes processed!
-    6 out of 12 genes processed!
-    7 out of 12 genes processed!
-    8 out of 12 genes processed!
-    9 out of 12 genes processed!
-    10 out of 12 genes processed!
-    11 out of 12 genes processed!
-    12 out of 12 genes processed!
-    Merging spheres...
-    Negative control filtering...
-
-
 
 ```python
 sphere
 ```
-
-
-
-
-<div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>sphere_x</th>
-      <th>sphere_y</th>
-      <th>sphere_z</th>
-      <th>layer_z</th>
-      <th>sphere_r</th>
-      <th>size</th>
-      <th>comp</th>
-      <th>in_nucleus</th>
-      <th>gene</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>5861.525313</td>
-      <td>2021.429797</td>
-      <td>15.259961</td>
-      <td>15.259961</td>
-      <td>1.115372</td>
-      <td>8</td>
-      <td>3</td>
-      <td>0.000000</td>
-      <td>Snap25</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>5823.012341</td>
-      <td>2477.027071</td>
-      <td>18.744452</td>
-      <td>18.744452</td>
-      <td>1.400544</td>
-      <td>13</td>
-      <td>5</td>
-      <td>0.000000</td>
-      <td>Snap25</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>5805.578936</td>
-      <td>2419.213116</td>
-      <td>18.711572</td>
-      <td>18.711572</td>
-      <td>1.355859</td>
-      <td>9</td>
-      <td>3</td>
-      <td>0.000000</td>
-      <td>Snap25</td>
-    </tr>
-    <tr>
-      <th>3</th>
-      <td>5831.996698</td>
-      <td>2545.542771</td>
-      <td>18.262820</td>
-      <td>18.262820</td>
-      <td>1.168398</td>
-      <td>7</td>
-      <td>2</td>
-      <td>0.000000</td>
-      <td>Snap25</td>
-    </tr>
-    <tr>
-      <th>4</th>
-      <td>5800.522809</td>
-      <td>2731.226949</td>
-      <td>16.212029</td>
-      <td>16.212029</td>
-      <td>1.322234</td>
-      <td>7</td>
-      <td>2</td>
-      <td>0.000000</td>
-      <td>Snap25</td>
-    </tr>
-    <tr>
-      <th>...</th>
-      <td>...</td>
-      <td>...</td>
-      <td>...</td>
-      <td>...</td>
-      <td>...</td>
-      <td>...</td>
-      <td>...</td>
-      <td>...</td>
-      <td>...</td>
-    </tr>
-    <tr>
-      <th>1274</th>
-      <td>6519.312500</td>
-      <td>2139.578125</td>
-      <td>17.562500</td>
-      <td>17.562500</td>
-      <td>0.908403</td>
-      <td>3</td>
-      <td>1</td>
-      <td>0.000000</td>
-      <td>Slc32a1</td>
-    </tr>
-    <tr>
-      <th>1275</th>
-      <td>6576.820312</td>
-      <td>2377.734375</td>
-      <td>14.804688</td>
-      <td>14.804688</td>
-      <td>1.148358</td>
-      <td>5</td>
-      <td>1</td>
-      <td>0.000000</td>
-      <td>Slc32a1</td>
-    </tr>
-    <tr>
-      <th>1276</th>
-      <td>6633.195312</td>
-      <td>2388.710938</td>
-      <td>16.890625</td>
-      <td>16.890625</td>
-      <td>0.476370</td>
-      <td>3</td>
-      <td>1</td>
-      <td>0.333333</td>
-      <td>Slc32a1</td>
-    </tr>
-    <tr>
-      <th>1277</th>
-      <td>6530.494635</td>
-      <td>2487.223874</td>
-      <td>15.567417</td>
-      <td>15.567417</td>
-      <td>1.246287</td>
-      <td>8</td>
-      <td>4</td>
-      <td>0.000000</td>
-      <td>Slc32a1</td>
-    </tr>
-    <tr>
-      <th>1278</th>
-      <td>6506.195312</td>
-      <td>2733.085938</td>
-      <td>14.562500</td>
-      <td>14.562500</td>
-      <td>0.586406</td>
-      <td>3</td>
-      <td>1</td>
-      <td>0.000000</td>
-      <td>Slc32a1</td>
-    </tr>
-  </tbody>
-</table>
-<p>1279 rows × 9 columns</p>
-</div>
-
-
 
 
 ```python
@@ -297,11 +92,14 @@ len(b)
 ```
 
 
+```python
+aaa = mc.spot_expression(grid_len=50)
+```
 
 
-    1001
+```python
 
-
+```
 
 ### 6. Spatial domain assignment
 
