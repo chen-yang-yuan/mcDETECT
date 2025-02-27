@@ -31,6 +31,20 @@ warnings.filterwarnings("ignore")
 sc.settings.verbosity = 0
 ```
 
+
+```python
+import rtree
+
+rtree.__version__
+```
+
+
+
+
+    '1.2.0'
+
+
+
 ### 3. Read in data
 
 
@@ -190,7 +204,7 @@ sphere
       <td>...</td>
     </tr>
     <tr>
-      <th>1421</th>
+      <th>1274</th>
       <td>6519.312500</td>
       <td>2139.578125</td>
       <td>17.562500</td>
@@ -202,7 +216,7 @@ sphere
       <td>Slc32a1</td>
     </tr>
     <tr>
-      <th>1422</th>
+      <th>1275</th>
       <td>6576.820312</td>
       <td>2377.734375</td>
       <td>14.804688</td>
@@ -214,7 +228,7 @@ sphere
       <td>Slc32a1</td>
     </tr>
     <tr>
-      <th>1423</th>
+      <th>1276</th>
       <td>6633.195312</td>
       <td>2388.710938</td>
       <td>16.890625</td>
@@ -226,7 +240,7 @@ sphere
       <td>Slc32a1</td>
     </tr>
     <tr>
-      <th>1424</th>
+      <th>1277</th>
       <td>6530.494635</td>
       <td>2487.223874</td>
       <td>15.567417</td>
@@ -238,7 +252,7 @@ sphere
       <td>Slc32a1</td>
     </tr>
     <tr>
-      <th>1425</th>
+      <th>1278</th>
       <td>6506.195312</td>
       <td>2733.085938</td>
       <td>14.562500</td>
