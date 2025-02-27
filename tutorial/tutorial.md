@@ -3,9 +3,9 @@
 Authors: Chenyang Yuan, Krupa Patel, Hongshun Shi, Hsiao-Lin V. Wang, Feng Wang, Ronghua Li, Yangping Li, Victor G. Corces, Hailing Shi, Sulagna Das, Jindan Yu, Peng Jin, Bing Yao* and Jian Hu*
 
 ### Outline
-1. [Installation](#installation)
-2. [Import Python modules](#import-python-modules)
-3. [Read in data](#read-in-data)
+1. [Installation](#1-installation)
+2. [Import Python modules](#2-import-python-modules)
+3. [Read in data](#3-read-in-data)
 
 ### 1. Installation
 
