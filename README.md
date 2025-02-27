@@ -27,10 +27,10 @@ Directly install the package from PyPI:
 # Note: you need to make sure that the pip is for python3
 pip3 install mcDETECT
 
-# If you do not have permission (when you get a permission denied error), you should install mcDETECT by:
+# If you do not have permission (when you get a permission denied error), you should run:
 pip3 install --user mcDETECT
 
-# Or you could install mcDETECT by:
+# Or you could run:
 python3 -m pip install mcDETECT
 ```
 
