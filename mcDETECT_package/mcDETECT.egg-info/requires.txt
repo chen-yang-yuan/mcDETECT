@@ -1,0 +1,9 @@
+anndata
+miniball
+numpy
+pandas
+rtree
+scanpy
+scikit-learn
+scipy
+shapely
