@@ -21,24 +21,20 @@ The detailed installation procedure can be found in [Installation](../README.md/
 python3 -m pip install mcDETECT
 ```
 
+### 2. Import Python modules
+
+Compiling this tutorial file needs the following Python packages:
+
 
 ```python
 import anndata
 import math
+import matplotlib.colors as clr
+import matplotlib.pyplot as plt
 import miniball
 import numpy as np
 import pandas as pd
 import scanpy as sc
-```
-
-### 2. Import Python modules
-
-Besides required Python packages for `mcDETECT` listed in [Dependencies](../README.md/#dependencies), this tutorial also needs the following packages:
-
-
-```python
-import matplotlib.colors as clr
-import matplotlib.pyplot as plt
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -47,12 +43,110 @@ sc.settings.verbosity = 0
 
 ### 3. Read in data
 
+`mcDETECT` requires the following input:
+
+* Transcript file (data frame)
+
+
+```python
+transcripts = pd.read_parquet("toy_data/transcripts.parquet")
+```
+
+We need to rename some columns of the transcript file to combat
+
+
+```python
+transcripts = transcripts[['cell_id', 'overlaps_nucleus', 'feature_name', 'x_location', 'y_location', 'z_location']]
+transcripts = transcripts.rename(columns = {"feature_name": "target", "x_location": "global_x", "y_location": "global_y", "z_location": "global_z"})
+transcripts.head()
+```
+
+
+
+
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>cell_id</th>
+      <th>overlaps_nucleus</th>
+      <th>target</th>
+      <th>global_x</th>
+      <th>global_y</th>
+      <th>global_z</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>163006771</th>
+      <td>fgdhmaei-1</td>
+      <td>0</td>
+      <td>A1cf</td>
+      <td>5994.734375</td>
+      <td>2021.468750</td>
+      <td>15.125000</td>
+    </tr>
+    <tr>
+      <th>163006772</th>
+      <td>UNASSIGNED</td>
+      <td>0</td>
+      <td>A2m</td>
+      <td>5763.109375</td>
+      <td>2043.625000</td>
+      <td>15.781250</td>
+    </tr>
+    <tr>
+      <th>163006773</th>
+      <td>UNASSIGNED</td>
+      <td>0</td>
+      <td>A2m</td>
+      <td>5951.984375</td>
+      <td>2085.984375</td>
+      <td>16.578125</td>
+    </tr>
+    <tr>
+      <th>163006774</th>
+      <td>hieeideh-1</td>
+      <td>1</td>
+      <td>Aatf</td>
+      <td>5757.593750</td>
+      <td>2163.453125</td>
+      <td>17.281250</td>
+    </tr>
+    <tr>
+      <th>163006775</th>
+      <td>fghnlpdi-1</td>
+      <td>1</td>
+      <td>Aatf</td>
+      <td>5969.406250</td>
+      <td>2149.406250</td>
+      <td>17.625000</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+
+
 
 ```python
 # Read and format transcripts
-transcripts = pd.read_parquet("toy_data/transcripts.parquet")
-transcripts = transcripts[['cell_id', 'overlaps_nucleus', 'feature_name', 'x_location', 'y_location', 'z_location']]
-transcripts = transcripts.rename(columns = {"feature_name": "target", "x_location": "global_x", "y_location": "global_y", "z_location": "global_z"})
+
+
 
 # Define synaptic markers
 syn_genes = ['Snap25', 'Camk2a', 'Slc17a7', 'Vamp2', 'Syp', 'Syn1', 'Dlg4', 'Gria2', 'Gap43', 'Gria1', 'Bsn', 'Slc32a1']
