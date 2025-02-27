@@ -13,7 +13,23 @@ mcDETECT is a computational framework designed to identify and profile individua
 To install `mcDETECT` package you must make sure that your python version is over 3.6. If you don’t know the version of python you can check it by:
 
 ```python
-fff
+import platform
+platform.python_version()
+```
+
+Now you can install the current release of `mcDETECT` by the following three ways:
+
+### PyPI
+
+```bash
+pip3 install MorphLink
+# Note: you need to make sure that the pip is for python3
+
+# or we could install MorphLink by
+python3 -m pip install MorphLink
+
+# If you do not have permission (when you get a permission denied error), you should install MorphLink by
+pip3 install --user MorphLink
 ```
 
 ## Dependencies
@@ -42,6 +58,6 @@ Source code: [mcDETECT_package](mcDETECT_package).<br>
 
 We are continuing adding new features. Bug reports or feature requests are welcome.<br>
 
-Last update: 02/27/2025, version 1.0.8.
+Last update: 02/27/2025, version 1.0.7.
 
 ## Citation
