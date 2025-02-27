@@ -33,7 +33,7 @@ import scanpy as sc
 
 ### 2. Import Python modules
 
-Besides required Python packages for `mcDETECT` listed in [Dependencies](../README.md/#dependencies), this tutorial also needs the following packages:
+Besides required Python packages for `mcDETECT` listed in [Dependencies](README.md), this tutorial also needs the following packages:
 
 
 ```python
