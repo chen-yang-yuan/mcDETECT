@@ -10,7 +10,7 @@ mcDETECT is a computational framework designed to identify and profile individua
 
 ## Installation
 
-ddddd
+ddddddd
 
 ## Dependencies
 
