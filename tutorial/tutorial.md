@@ -77,15 +77,16 @@ We need to rename some columns of the transcript file to adapt to the input form
 ```python
 transcripts = transcripts[['cell_id', 'overlaps_nucleus', 'feature_name', 'x_location', 'y_location', 'z_location']]
 transcripts = transcripts.rename(columns = {"feature_name": "target", "x_location": "global_x", "y_location": "global_y", "z_location": "global_z"})
-print(transcripts.head().to_string())
+print(transcripts.head().to_markdown())
 ```
 
-                  cell_id  overlaps_nucleus target     global_x     global_y   global_z
-    163006771  fgdhmaei-1                 0   A1cf  5994.734375  2021.468750  15.125000
-    163006772  UNASSIGNED                 0    A2m  5763.109375  2043.625000  15.781250
-    163006773  UNASSIGNED                 0    A2m  5951.984375  2085.984375  16.578125
-    163006774  hieeideh-1                 1   Aatf  5757.593750  2163.453125  17.281250
-    163006775  fghnlpdi-1                 1   Aatf  5969.406250  2149.406250  17.625000
+    |           | cell_id    |   overlaps_nucleus | target   |   global_x |   global_y |   global_z |
+    |----------:|:-----------|-------------------:|:---------|-----------:|-----------:|-----------:|
+    | 163006771 | fgdhmaei-1 |                  0 | A1cf     |    5994.73 |    2021.47 |    15.125  |
+    | 163006772 | UNASSIGNED |                  0 | A2m      |    5763.11 |    2043.62 |    15.7812 |
+    | 163006773 | UNASSIGNED |                  0 | A2m      |    5951.98 |    2085.98 |    16.5781 |
+    | 163006774 | hieeideh-1 |                  1 | Aatf     |    5757.59 |    2163.45 |    17.2812 |
+    | 163006775 | fghnlpdi-1 |                  1 | Aatf     |    5969.41 |    2149.41 |    17.625  |
 
 
 
