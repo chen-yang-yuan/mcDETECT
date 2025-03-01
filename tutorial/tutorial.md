@@ -64,7 +64,7 @@ The toy dataset used in this tutorial is part of the isocortex region from [Xeni
 
 `mcDETECT` requires the following input:
 
-* Transcript file (dataframe): records gene identity and 3D spatial coordinates of each mRNA molecule
+* Transcript file: dataframe recording gene identity and 3D spatial coordinates of each mRNA molecule
 
 
 ```python
@@ -88,14 +88,14 @@ print(transcripts.head().to_string())
     163006775  fghnlpdi-1                 1   Aatf  5969.406250  2149.406250  17.625000
 
 
-* User-defined synaptic markers (list)
+* User-defined synaptic markers: list
 
 
 ```python
 syn_genes = ['Snap25', 'Camk2a', 'Slc17a7', 'Vamp2', 'Syp', 'Syn1', 'Dlg4', 'Gria2', 'Gap43', 'Gria1', 'Bsn', 'Slc32a1']
 ```
 
-* User-defined negative control markers (list)
+* (Optional) User-defined negative control markers: list. If `None`, negative control filtering will be disabled.
 
 
 ```python
@@ -109,11 +109,29 @@ print(nc_genes[:10])
 
 ### 4. Parameter settings
 
+Instantiating `mc` of `mcDETECT`:
+
 
 ```python
-mc = mcDETECT(type = "Xenium", transcripts = transcripts, syn_genes = syn_genes, nc_genes = nc_genes, eps = 1.5, grid_len = 1, cutoff_prob = 0.95, alpha = 5, low_bound = 3,
-              size_thr = 5, in_nucleus_thr = (0.5, 0.5), l = 1, rho = 0.2, s = 1, nc_top = 20, nc_thr = 0.1)
+mc = mcDETECT(type = "Xenium", transcripts = transcripts, syn_genes = syn_genes, nc_genes = nc_genes, eps = 1.5,
+              minspl = None, grid_len = 1, cutoff_prob = 0.95, alpha = 5, low_bound = 3, size_thr = 5,
+              in_nucleus_thr = (0.5, 0.5), l = 1, rho = 0.2, s = 1, nc_top = 20, nc_thr = 0.1)
 ```
+
+Hyperparameters in `mcDETECT`:
+* `eps` $\epsilon$: numeric, searching radius in density-based clustering, default is 1.5 $\mu m$
+* `minspl`: integer, min_samples in density-based clustering, default is `None`. Users can manually define `minspl` and thus disable the automatic parameter selection.
+* `grid_len`: numeric, side length of square grids over the tissue region (used in calculating the tissue area), default is 1 $\mu m$
+* `cutoff_prob`: numeric, cutoff probability in parameter selection for min_samples, default is 0.95
+* `alpha` $\alpha$: numeric, enhancing factor in parameter selection for min_samples, default is 5
+* `low_bound`: integer, lower bound in parameter selection for min_samples, default is 3
+* `size_thr`: numeric, threshold for maximum radius of an aggregation, default is 5 $\mu m$
+* `in_nucleus_thr`: 2-d tuple, thresholds for low- and high-in-nucleus ratio, default is (0.5, 0.5)
+* `l`: numeric, scaling factor for seaching overlapped spheres, default is 1
+* `rho` $\rho$: numeric, threshold for determining overlaps, default is 0.2
+* `s`: numeric, scaling factor for merging overlapped spheres, default is 1
+* `nc_top`: integer, number of negative controls retained for filtering, default is 20
+* `nc_thr`: numeric, threshold for negative control filtering, default is 0.1
 
 ### 5. Synapse detection
 
