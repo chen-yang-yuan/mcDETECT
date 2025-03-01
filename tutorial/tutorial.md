@@ -56,9 +56,6 @@ from mcDETECT import mcDETECT
 import warnings
 warnings.filterwarnings("ignore")
 sc.settings.verbosity = 0
-
-pd.options.display.html.table_schema = False
-pd.options.display.notebook_repr_html = False
 ```
 
 ### 3. Read in data
@@ -81,30 +78,6 @@ We need to rename some columns of the transcript file to adapt to the input form
 transcripts = transcripts[['cell_id', 'overlaps_nucleus', 'feature_name', 'x_location', 'y_location', 'z_location']]
 transcripts = transcripts.rename(columns = {"feature_name": "target", "x_location": "global_x", "y_location": "global_y", "z_location": "global_z"})
 transcripts.head()
-```
-
-
-
-
-                  cell_id  overlaps_nucleus target     global_x     global_y  \
-    163006771  fgdhmaei-1                 0   A1cf  5994.734375  2021.468750   
-    163006772  UNASSIGNED                 0    A2m  5763.109375  2043.625000   
-    163006773  UNASSIGNED                 0    A2m  5951.984375  2085.984375   
-    163006774  hieeideh-1                 1   Aatf  5757.593750  2163.453125   
-    163006775  fghnlpdi-1                 1   Aatf  5969.406250  2149.406250   
-    
-                global_z  
-    163006771  15.125000  
-    163006772  15.781250  
-    163006773  16.578125  
-    163006774  17.281250  
-    163006775  17.625000  
-
-
-
-
-```python
-transcripts
 ```
 
 
@@ -182,66 +155,16 @@ transcripts
       <td>2149.406250</td>
       <td>17.625000</td>
     </tr>
-    <tr>
-      <th>...</th>
-      <td>...</td>
-      <td>...</td>
-      <td>...</td>
-      <td>...</td>
-      <td>...</td>
-      <td>...</td>
-    </tr>
-    <tr>
-      <th>185456895</th>
-      <td>fikpmdpm-1</td>
-      <td>0</td>
-      <td>Vtn</td>
-      <td>6502.234375</td>
-      <td>2760.000000</td>
-      <td>14.859375</td>
-    </tr>
-    <tr>
-      <th>185456896</th>
-      <td>UNASSIGNED</td>
-      <td>0</td>
-      <td>Wapl</td>
-      <td>6731.968750</td>
-      <td>2854.625000</td>
-      <td>21.890625</td>
-    </tr>
-    <tr>
-      <th>185456897</th>
-      <td>fikpmdpm-1</td>
-      <td>0</td>
-      <td>Wnt4</td>
-      <td>6503.468750</td>
-      <td>2754.656250</td>
-      <td>16.156250</td>
-    </tr>
-    <tr>
-      <th>185456898</th>
-      <td>fikpmdpm-1</td>
-      <td>1</td>
-      <td>Ywhaz</td>
-      <td>6501.953125</td>
-      <td>2752.484375</td>
-      <td>14.609375</td>
-    </tr>
-    <tr>
-      <th>185456899</th>
-      <td>fikpmdpm-1</td>
-      <td>1</td>
-      <td>Zmpste24</td>
-      <td>6501.359375</td>
-      <td>2752.156250</td>
-      <td>14.562500</td>
-    </tr>
   </tbody>
 </table>
-<p>8019192 rows × 6 columns</p>
 </div>
 
 
+
+
+```python
+transcripts
+```
 
 * Synaptic markers (list)
 
