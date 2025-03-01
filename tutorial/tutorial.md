@@ -283,7 +283,7 @@ ax = sc.pl.scatter(spots, alpha = 1, x = "global_y", y = "global_x", color = "re
 ax.grid(False)
 ax.set_aspect('equal', 'box')
 plt.savefig("tutorial_files/spatial_domain.png", dpi = 120)
-plt.show()
+plt.close()
 ```
 
 
@@ -336,7 +336,7 @@ ax = sc.pl.scatter(synapse_adata, alpha = 1, x = 'sphere_y', y = 'sphere_x', col
 ax.grid(False)
 ax.set_aspect('equal', 'box')
 plt.savefig("tutorial_files/synapses.png", dpi = 120)
-plt.show()
+plt.close()
 ```
 
 
@@ -453,7 +453,7 @@ ax.set_ylabel('Percentage of Marker Genes')
 ax.grid(False)
 ax.legend(title = "Type",loc = "upper right")
 plt.savefig('tutorial_files/synapse_subtyping.png', dpi = 120)
-plt.show()
+plt.close()
 ```
 
 
@@ -496,7 +496,7 @@ ax = sc.pl.scatter(syn_adata, alpha = 1, x = 'global_y', y = 'global_x', color =
 ax.grid(False)
 ax.set_aspect('equal', 'box')
 plt.savefig("tutorial_files/synapses_pre_post.png", dpi = 120)
-plt.show()
+plt.close()
 ```
 
 
