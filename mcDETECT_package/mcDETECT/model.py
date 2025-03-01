@@ -361,16 +361,16 @@ class mcDETECT:
             transcripts = self.transcripts[self.transcripts['target'].isin(genes)]
         
         # construct bins
-        x_bins, y_bins = self.construct_grid(grid_len = None)
+        x_bins, y_bins = self.construct_grid(grid_len = grid_len)
         
         # initialize data
         X = np.zeros((len(genes), (len(x_bins) - 1) * (len(y_bins) - 1)))
         global_x, global_y = [], []
         
         # coordinates
-        for i in list(x_bins):
+        for i in list(x_bins)[:-1]:
             center_x = i + 0.5 * grid_len
-            for j in list(y_bins):
+            for j in list(y_bins)[:-1]:
                 center_y = j + 0.5 * grid_len
                 global_x.append(center_x)
                 global_y.append(center_y)
@@ -380,8 +380,8 @@ class mcDETECT:
             target_gene = transcripts[transcripts['target'] == k]
             count_gene, _, _ = np.histogram2d(target_gene['global_x'], target_gene['global_y'], bins = [x_bins, y_bins])
             X[k_idx, :] = count_gene.flatten()
-            if k_idx % 50 == 0:
-                print("{} out of {} genes profiled!".format(k_idx + 1, len(genes)))
+            if k_idx % 100 == 0:
+                print("{} out of {} genes profiled!".format(k_idx, len(genes)))
         
         # spot id
         spot_id = []
