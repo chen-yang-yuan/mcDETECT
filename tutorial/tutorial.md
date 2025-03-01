@@ -32,7 +32,7 @@ mcDETECT.__version__
 
 
 
-    '1.0.9'
+    '1.0.10'
 
 
 
@@ -53,7 +53,7 @@ import random
 import scanpy as sc
 import SpaGCN as spg
 import torch
-from mcDETECT import mcDETECT
+from mcDETECT import mcDETECT, closest
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -160,7 +160,7 @@ synapses = mc.detect()
     Negative control filtering...
 
 
-The output is a dataframe of synapse metspots:
+The output is a dataframe of synapse metadata:
 
 
 ```python
@@ -223,7 +223,7 @@ spots
 
 
 
-Next, we apply [`SpaGCN`](https://github.com/jianhuupenn/SpaGCN/) on this spot-level gene expression data for spatial domain detection:
+Next, we apply a spatial clustering approach, `SpaGCN`, on this spot-level gene expression data for spatial domain detection. For more details check its [GitHub page](https://github.com/jianhuupenn/SpaGCN/).
 
 
 ```python
@@ -272,15 +272,15 @@ spots.obs["refined_pred"] = refined_pred
 spots.obs["refined_pred"] = spots.obs["refined_pred"].astype('category')
 ```
 
-The spot-level spatial domain assignment looks like:
+Spot-level spatial domain assignment:
 
 
 ```python
-# plot spatial domains
 sc.set_figure_params(scanpy = True, figsize = (5, 5))
-ax = sc.pl.scatter(spots, alpha = 1, x = "global_y", y = "global_x", color = "refined_pred", title = " ", show = False, size = 800)
+ax = sc.pl.scatter(spots, alpha = 1, x = "global_y", y = "global_x", color = "refined_pred", size = 800, title = " ", show = False)
 ax.grid(False)
-plt.savefig("tutorial_files/spatial_domain.png", dpi=120)
+ax.set_aspect('equal', 'box')
+plt.savefig("tutorial_files/spatial_domain.png", dpi = 120)
 plt.show()
 ```
 
@@ -290,11 +290,82 @@ plt.show()
     
 
 
-### 7. Synapse transcriptome profiling
+We can replace the spatial domain labels with meaningful brain region labels, i.e., isocortex layers:
 
 
 ```python
-a = mc.profile(sphere)
+area_dict = {'Others': [4],
+             'Layer I': [3],
+             'Layer II/III': [0],
+             'Layer IV': [1],
+             'Layer V': [2],
+             'Layer VI': [5]}
+
+spots.obs['brain_area'] = np.nan
+for i in area_dict.keys():
+    ind = pd.Series(spots.obs['refined_pred']).isin(area_dict[i])
+    spots.obs.loc[ind, 'brain_area'] = i
 ```
+
+The assigned brain region labels for each spot are propagated to all synapses within it. The `closest()` function is designed to identify the element in a list that has the smallest distance to the query item.
+
+
+```python
+labels_df = pd.DataFrame({'global_x': spots.obs['global_x'], 'global_y': spots.obs['global_y'], 'brain_area': spots.obs['brain_area']})
+x_grid, y_grid = list(np.unique(labels_df['global_x'])), list(np.unique(labels_df['global_y']))
+
+synapses['brain_area'] = np.nan
+for i in range(synapses.shape[0]):
+    closest_x = closest(x_grid, synapses['sphere_x'].iloc[i])
+    closest_y = closest(y_grid, synapses['sphere_y'].iloc[i])
+    target_label = labels_df[(labels_df['global_x'] == closest_x) & (labels_df['global_y'] == closest_y)]
+    synapses['brain_area'].iloc[i] = target_label['brain_area'][0]
+```
+
+The resulting spatial distribution of all identified synapses, colored by brain region:
+
+
+```python
+synapse_adata = anndata.AnnData(X = np.zeros(synapses.shape), obs = synapses)
+synapse_adata.obs['brain_area'] = pd.Categorical(synapse_adata.obs['brain_area'], categories = ['Layer I', 'Layer II/III', 'Layer IV', 'Layer V', 'Layer VI'], ordered = True)
+
+color_map = ["#F56867", "#FEB915", "#C798EE", "#59BE86", "#7495D3"]
+ax = sc.pl.scatter(synapse_adata, alpha = 1, x = 'sphere_y', y = 'sphere_x', color = 'brain_area', palette = color_map, size = 30, title = " ", show = False)
+ax.grid(False)
+ax.set_aspect('equal', 'box')
+plt.savefig("tutorial_files/synapses.png", dpi = 120)
+plt.show()
+```
+
+
+    
+![png](tutorial_files/tutorial_34_0.png)
+    
+
+
+### 7. Synapse transcriptome profiling
+
+Synapse transcriptome profiling is implemented in the `profile()` function:
+
+
+```python
+syn_adata = mc.profile(synapses)
+```
+
+The output is an anndata object representing the spatial transcriptome profile of all identified synapses:
+
+
+```python
+syn_adata
+```
+
+
+
+
+    AnnData object with n_obs × n_vars = 1279 × 5006
+        obs: 'global_x', 'global_y', 'global_z', 'layer_z', 'sphere_r', 'size', 'comp', 'in_nucleus', 'gene', 'brain_area', 'synapse_id'
+        var: 'genes'
+
+
 
 ### 8. Synapse subtyping
