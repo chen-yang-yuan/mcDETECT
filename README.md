@@ -70,6 +70,6 @@ Source code: [mcDETECT_package](mcDETECT_package).<br>
 
 We are continuing adding new features. Bug reports or feature requests are welcome.<br>
 
-Last update: 02/27/2025, version 1.0.7.
+Last update: 03/01/2025, version 1.0.10.
 
 ## Citation
