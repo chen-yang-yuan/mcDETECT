@@ -88,14 +88,14 @@ print(transcripts.head().to_string())
     163006775  fghnlpdi-1                 1   Aatf  5969.406250  2149.406250  17.625000
 
 
-* Synaptic markers (list)
+* User-defined synaptic markers (list)
 
 
 ```python
 syn_genes = ['Snap25', 'Camk2a', 'Slc17a7', 'Vamp2', 'Syp', 'Syn1', 'Dlg4', 'Gria2', 'Gap43', 'Gria1', 'Bsn', 'Slc32a1']
 ```
 
-* Negative control markers (list)
+* User-defined negative control markers (list). Here I use the genes reported by [Niu _et al._](https://www.nature.com/articles/s41587-022-01635-1) as being upregulated in neuronal nuclei compared to synapses.
 
 
 ```python
