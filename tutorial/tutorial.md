@@ -43,10 +43,7 @@ Compiling this tutorial file needs the following Python packages:
 
 ```python
 import anndata
-import math
-import matplotlib.colors as clr
 import matplotlib.pyplot as plt
-import miniball
 import numpy as np
 import pandas as pd
 import random
@@ -62,7 +59,7 @@ sc.settings.verbosity = 0
 
 ### 3. Read in data
 
-The toy dataset used in this tutorial is part of the isocortex region from [Xenium 5K mouse brain data](https://www.10xgenomics.com/datasets/xenium-prime-fresh-frozen-mouse-brain).
+The toy dataset used in this tutorial is part of the isocortex region from the [Xenium 5K mouse brain data](https://www.10xgenomics.com/datasets/xenium-prime-fresh-frozen-mouse-brain).
 
 `mcDETECT` requires the following input:
 
@@ -111,7 +108,7 @@ print(nc_genes[:10])
 
 ### 4. Parameter settings
 
-Instantiating an object `mc` from `mcDETECT`:
+Instantiate an object `mc` from `mcDETECT`:
 
 
 ```python
@@ -121,18 +118,18 @@ mc = mcDETECT(type = "Xenium", transcripts = transcripts, syn_genes = syn_genes,
 ```
 
 Hyperparameters in `mcDETECT`:
-* `eps` $\epsilon$: numeric, searching radius in density-based clustering, default is 1.5 $\mu m$
+* `eps` ($\epsilon$): numeric, searching radius in density-based clustering, default is 1.5 $\mu m$
 * `minspl`: integer, min_samples in density-based clustering, default is `None`. Users can manually define `minspl` and thus disable the automatic parameter selection process.
-* `grid_len`: numeric, side length of square grids over the tissue region (used in calculating the tissue area), default is 1 $\mu m$
+* `grid_len`: numeric, side length of square grids over the tissue region (used in approximating the tissue area), default is 1 $\mu m$
 * `cutoff_prob`: numeric, cutoff probability in parameter selection for min_samples, default is 0.95
-* `alpha` $\alpha$: numeric, enhancing factor in parameter selection for min_samples, default is 5
+* `alpha` ($\alpha$): numeric, enhancing factor in parameter selection for min_samples, default is 5
 * `low_bound`: integer, lower bound in parameter selection for min_samples, default is 3
 * `size_thr`: numeric, threshold for maximum radius of an aggregation, default is 5 $\mu m$
-* `in_nucleus_thr`: 2-d tuple, thresholds for low- and high-in-nucleus ratio, default is (0.5, 0.5)
+* `in_nucleus_thr`: 2-d tuple, thresholds for low and high in-nucleus ratio, default is (0.5, 0.5)
 * `l`: numeric, scaling factor for seaching overlapped spheres, default is 1
-* `rho` $\rho$: numeric, threshold for determining overlaps, default is 0.2
+* `rho` ($\rho$): numeric, threshold for determining overlaps, default is 0.2
 * `s`: numeric, scaling factor for merging overlapped spheres, default is 1
-* `nc_top`: integer, number of negative controls retained for filtering, default is 20
+* `nc_top`: integer, number of top negative control genes retained for filtering, default is 20
 * `nc_thr`: numeric, threshold for negative control filtering, default is 0.1
 
 ### 5. Synapse detection
@@ -209,6 +206,8 @@ spots = mc.spot_expression(grid_len = 50, genes = highly_variable_genes)
 
 * `grid_len`: numeric, side length of square grids over the tissue region, default is 50 $\mu m$
 
+The output is an anndata object representing the spot-level gene expression data:
+
 
 ```python
 spots
@@ -223,7 +222,7 @@ spots
 
 
 
-Next, we apply a spatial clustering approach, `SpaGCN`, on this spot-level gene expression data for spatial domain detection. For more details check its [GitHub page](https://github.com/jianhuupenn/SpaGCN/).
+Next, we apply a spatial clustering approach, `SpaGCN`, on this anndata object for spatial domain detection. For more details check its [GitHub page](https://github.com/jianhuupenn/SpaGCN/).
 
 
 ```python
@@ -307,7 +306,7 @@ for i in area_dict.keys():
     spots.obs.loc[ind, 'brain_area'] = i
 ```
 
-The assigned brain region labels for each spot are propagated to all synapses within it. The `closest()` function is designed to identify the element in a list that has the smallest distance to the query item.
+The assigned brain region label for each spot is propagated to all synapses within it. The `closest()` function is designed to identify the element in a list that has the smallest distance to the query item.
 
 
 ```python
