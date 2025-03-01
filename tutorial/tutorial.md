@@ -120,7 +120,7 @@ mc = mcDETECT(type = "Xenium", transcripts = transcripts, syn_genes = syn_genes,
 
 Hyperparameters in `mcDETECT`:
 * `eps` $\epsilon$: numeric, searching radius in density-based clustering, default is 1.5 $\mu m$
-* `minspl`: integer, min_samples in density-based clustering, default is `None`. Users can manually define `minspl` and thus disable the automatic parameter selection.
+* `minspl`: integer, min_samples in density-based clustering, default is `None`. Users can manually define `minspl` and thus disable the automatic parameter selection process.
 * `grid_len`: numeric, side length of square grids over the tissue region (used in calculating the tissue area), default is 1 $\mu m$
 * `cutoff_prob`: numeric, cutoff probability in parameter selection for min_samples, default is 0.95
 * `alpha` $\alpha$: numeric, enhancing factor in parameter selection for min_samples, default is 5
@@ -135,15 +135,51 @@ Hyperparameters in `mcDETECT`:
 
 ### 5. Synapse detection
 
-
-```python
-sphere = mc.detect()
-```
+Synapse detection is implemented in the `detect()` function:
 
 
 ```python
-sphere
+synapses = mc.detect()
 ```
+
+    1 out of 12 genes processed!
+    2 out of 12 genes processed!
+    3 out of 12 genes processed!
+    4 out of 12 genes processed!
+    5 out of 12 genes processed!
+    6 out of 12 genes processed!
+    7 out of 12 genes processed!
+    8 out of 12 genes processed!
+    9 out of 12 genes processed!
+    10 out of 12 genes processed!
+    11 out of 12 genes processed!
+    12 out of 12 genes processed!
+    Merging spheres...
+    Negative control filtering...
+
+
+The output is a dataframe of synapse metadata:
+
+
+```python
+print(synapses.head().to_string())
+```
+
+          sphere_x     sphere_y   sphere_z    layer_z  sphere_r  size  comp  in_nucleus    gene
+    0  5861.525313  2021.429797  15.259961  15.259961  1.115372     8     3         0.0  Snap25
+    1  5823.012341  2477.027071  18.744452  18.744452  1.400544    13     5         0.0  Snap25
+    2  5805.578936  2419.213116  18.711572  18.711572  1.355859     9     3         0.0  Snap25
+    3  5831.996698  2545.542771  18.262820  18.262820  1.168398     7     2         0.0  Snap25
+    4  5800.522809  2731.226949  16.212029  16.212029  1.322234     7     2         0.0  Snap25
+
+
+* `sphere_x`, `sphere_y`, `sphere_z`: 3D spatial coordinates of each identified synapse
+* `layer_z`: the nearest z-layer of each identified synapse, only applicable in iST datasets with discrete z-coordinates, e.g., MERSCOPE and CosMx
+* `sphere_r`: radius of each identified synapse
+* `size`: number of synaptic mRNAs within each synapse
+* `comp`: number of synaptic genes presented in each synapse
+* `in_nucleus`: proportion of synaptic mRNAs located within cell nuclei
+* `gene`: primary synaptic marker that defines the associated synapse
 
 
 ```python
