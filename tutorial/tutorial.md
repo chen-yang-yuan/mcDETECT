@@ -15,11 +15,26 @@ Authors: Chenyang Yuan, Krupa Patel, Hongshun Shi, Hsiao-Lin V. Wang, Feng Wang,
 
 ### 1. Installation
 
-The detailed installation procedure can be found in [Installation](../README.md/#installation). Here I directly install the package by running:
+The detailed installation procedure can be found in [Installation](../README.md/#installation). Here I directly install `mcDETECT` by running:
 
 ```bash
 python3 -m pip install mcDETECT
 ```
+
+Check the version of `mcDETECT`:
+
+
+```python
+import mcDETECT
+mcDETECT.__version__
+```
+
+
+
+
+    '1.0.8'
+
+
 
 ### 2. Import Python modules
 
@@ -40,6 +55,11 @@ from mcDETECT import mcDETECT
 import warnings
 warnings.filterwarnings("ignore")
 sc.settings.verbosity = 0
+```
+
+
+```python
+
 ```
 
 ### 3. Read in data
