@@ -32,7 +32,7 @@ mcDETECT.__version__
 
 
 
-    '1.0.8'
+    '1.0.9'
 
 
 
@@ -49,8 +49,10 @@ import matplotlib.pyplot as plt
 import miniball
 import numpy as np
 import pandas as pd
+import random
 import scanpy as sc
 import SpaGCN as spg
+import torch
 from mcDETECT import mcDETECT
 
 import warnings
@@ -158,7 +160,7 @@ synapses = mc.detect()
     Negative control filtering...
 
 
-The output is a dataframe of synapse metadata:
+The output is a dataframe of synapse metspots:
 
 
 ```python
@@ -181,27 +183,111 @@ print(synapses.head().to_string())
 * `in_nucleus`: proportion of synaptic mRNAs located within cell nuclei
 * `gene`: primary synaptic marker that defines the associated synapse
 
-
-```python
-a, b = mc.construct_grid()
-```
-
-
-```python
-len(b)
-```
-
-
-```python
-aaa = mc.spot_expression(grid_len=50)
-```
-
-
-```python
-
-```
-
 ### 6. Spatial domain assignment
+
+To detect spatial domains, we first need to create a spot-level gene expression data from the transcript file. Here we only retain the top 1,000 highly variable genes and use the `spot_expression()` function to construct such data:
+
+
+```python
+highly_variable_genes = pd.read_csv('toy_data/highly_variable_genes.csv')
+highly_variable_genes = list(highly_variable_genes.iloc[:, 0])
+
+spots = mc.spot_expression(grid_len = 50, genes = highly_variable_genes)
+```
+
+    0 out of 1000 genes profiled!
+    100 out of 1000 genes profiled!
+    200 out of 1000 genes profiled!
+    300 out of 1000 genes profiled!
+    400 out of 1000 genes profiled!
+    500 out of 1000 genes profiled!
+    600 out of 1000 genes profiled!
+    700 out of 1000 genes profiled!
+    800 out of 1000 genes profiled!
+    900 out of 1000 genes profiled!
+
+
+* `grid_len`: numeric, side length of square grids over the tissue region, default is 50 $\mu m$
+
+
+```python
+spots
+```
+
+
+
+
+    AnnData object with n_obs × n_vars = 400 × 1000
+        obs: 'spot_id', 'global_x', 'global_y'
+        var: 'genes'
+
+
+
+Next, we apply [`SpaGCN`](https://github.com/jianhuupenn/SpaGCN/) on this spot-level gene expression data for spatial domain detection:
+
+
+```python
+%%capture
+
+# Spot coordinates
+x_array = spots.obs['global_x'].tolist()
+y_array = spots.obs['global_y'].tolist()
+
+# Adjacency matrix
+s = 1
+b = 49
+adj = spg.calculate_adj_matrix(x = x_array, y = y_array, histology = False)
+
+# Pre-processing
+spots.var_names_make_unique()
+spg.prefilter_genes(spots, min_cells = 3)
+spg.prefilter_specialgenes(spots)
+sc.pp.normalize_total(spots, target_sum = 1e4)
+sc.pp.log1p(spots)
+
+# Set hyperparameters
+p = 0.5
+l = spg.search_l(p, adj, start = 0.01, end = 1000, tol = 0.01, max_run = 100)
+
+n_clusters = 6
+r_seed = t_seed = n_seed = 1
+res = spg.search_res(spots, adj, l, n_clusters, start = 0.7, step = 0.1, tol = 5e-3, lr = 0.05, max_epochs = 20, r_seed = r_seed, t_seed = t_seed, n_seed = n_seed)
+
+# Run SpaGCN
+clf = spg.SpaGCN()
+clf.set_l(l)
+
+random.seed(r_seed)
+torch.manual_seed(t_seed)
+np.random.seed(n_seed)
+
+clf.train(spots, adj, init_spa = True, init = "louvain", res = res, tol = 5e-3, lr = 0.05, max_epochs = 200)
+y_pred, prob = clf.predict()
+spots.obs["pred"] = y_pred
+spots.obs["pred"] = spots.obs["pred"].astype('category')
+
+adj_2d = spg.calculate_adj_matrix(x = x_array, y = y_array, histology = False)
+refined_pred = spg.refine(sample_id = spots.obs.index.tolist(), pred = spots.obs["pred"].tolist(), dis = adj_2d, shape = "square")
+spots.obs["refined_pred"] = refined_pred
+spots.obs["refined_pred"] = spots.obs["refined_pred"].astype('category')
+```
+
+The spot-level spatial domain assignment looks like:
+
+
+```python
+# plot spatial domains
+sc.set_figure_params(scanpy = True, figsize = (5, 5))
+ax = sc.pl.scatter(spots, alpha = 1, x = "global_y", y = "global_x", color = "refined_pred", title = " ", show = False, size = 800)
+ax.grid(False)
+plt.show()
+```
+
+
+    
+![png](tutorial_files/tutorial_28_0.png)
+    
+
 
 ### 7. Synapse transcriptome profiling
 
