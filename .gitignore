@@ -2,5 +2,4 @@
 .Rhistory
 Makefile
 tutorial/toy_data
-tutorial/tutorial_files/tutorial_*
 tutorial/__pycache__
