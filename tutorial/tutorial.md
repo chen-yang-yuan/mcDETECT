@@ -50,6 +50,9 @@ import random
 import scanpy as sc
 import SpaGCN as spg
 import torch
+from collections import defaultdict
+from sklearn.cluster import KMeans
+
 from mcDETECT import mcDETECT, closest
 
 import warnings
@@ -344,7 +347,7 @@ plt.show()
 
 ### 7. Synapse transcriptome profiling
 
-Synapse transcriptome profiling is implemented in the `profile()` function:
+Synapse transcriptome profiling is implemented in the `profile()` function. The 
 
 
 ```python
@@ -368,3 +371,141 @@ syn_adata
 
 
 ### 8. Synapse subtyping
+
+We can classify the identified synapses into dinstinct subtypes, e.g., pre-synapses and post-synapses, based on their transcriptome profile. Here we use a list of pre- and post-synaptic markers for synapse subtyping:
+
+
+```python
+ref_genes = ['Bsn', 'Gap43', 'Nrxn1', 'Slc17a6', 'Slc17a7', 'Slc32a1', 'Snap25', 'Stx1a', 'Syn1', 'Syp', 'Syt1', 'Vamp2'] + ['Camk2a', 'Dlg3', 'Dlg4', 'Gphn', 'Gria1', 'Gria2', 'Homer1', 'Homer2', 'Nlgn1', 'Nlgn2', 'Nlgn3', 'Shank1', 'Shank3']
+ref_genes = [i for i in ref_genes if i in syn_adata.var_names]
+
+syn_adata_subset = syn_adata[:, ref_genes].copy()
+syn_adata_subset
+```
+
+
+
+
+    AnnData object with n_obs × n_vars = 1279 × 20
+        obs: 'global_x', 'global_y', 'global_z', 'layer_z', 'sphere_r', 'size', 'comp', 'in_nucleus', 'gene', 'brain_area', 'synapse_id'
+        var: 'genes'
+
+
+
+K-Means clustering on the synapses based on the enrichment of these markers:
+
+
+```python
+data = syn_adata_subset.X
+if not isinstance(data, np.ndarray):
+    data = data.toarray()
+
+n_clusters = 10
+kmeans = KMeans(n_clusters = n_clusters, random_state = 42, n_init = 25)
+kmeans.fit(data)
+syn_adata.obs['kmeans_pre_post'] = kmeans.labels_.astype(str)
+```
+
+Examine the enrichment of these markers in each resulting clusters:
+
+
+```python
+marker_genes = {'pre-syn': ['Bsn', 'Gap43', 'Slc17a6', 'Slc17a7', 'Slc32a1', 'Snap25', 'Stx1a', 'Syn1', 'Syp', 'Vamp2'],
+                'post-syn': ['Camk2a', 'Dlg3', 'Dlg4', 'Gphn', 'Gria1', 'Gria2', 'Homer1', 'Nlgn2', 'Nlgn3', 'Shank3']}
+
+expression_data = pd.DataFrame(syn_adata.X, columns=syn_adata.var_names, index=syn_adata.obs_names)
+kmeans_labels = syn_adata.obs['kmeans_pre_post']
+cluster_marker_avg = defaultdict(lambda: defaultdict(int))
+
+for cluster, genes in marker_genes.items():
+    num_genes = len(genes)
+    for gene in genes:
+        if gene in expression_data.columns:
+            gene_expression = expression_data[gene].groupby(kmeans_labels).sum()
+            for kmeans_cluster, expr_sum in gene_expression.items():
+                cluster_marker_avg[kmeans_cluster][cluster] += expr_sum / num_genes
+
+cluster_percentages = {}
+for kmeans_cluster, cluster_counts in cluster_marker_avg.items():
+    total_expression = sum(cluster_counts.values())
+    if total_expression > 0:
+        cluster_percentages[kmeans_cluster] = {cluster: (count / total_expression) * 100 for cluster, count in cluster_counts.items()}
+    else:
+        cluster_percentages[kmeans_cluster] = {cluster: 0 for cluster in cluster_counts.keys()}
+
+cluster_labels = list(cluster_percentages.keys())
+marker_clusters = list(marker_genes.keys())
+
+plot_data = np.array([
+    [cluster_percentages[cluster].get(marker, 0) for marker in marker_clusters]
+    for cluster in cluster_labels
+])
+
+fig, ax = plt.subplots(figsize=(8, 6))
+bottom = np.zeros(len(cluster_labels))
+
+for i, marker_cluster in enumerate(marker_clusters):
+    ax.bar(cluster_labels, plot_data[:, i], bottom=bottom, label=marker_cluster)
+    bottom += plot_data[:, i]
+
+ax.set_xlabel('mcDETECT Clusters')
+ax.set_ylabel('Percentage of Marker Genes')
+ax.grid(False)
+ax.legend(title = "Type",loc = "upper right")
+plt.savefig('tutorial_files/synapse_subtyping.png', dpi = 120)
+plt.show()
+```
+
+
+    
+![png](tutorial_files/tutorial_44_0.png)
+    
+
+
+Assign each cluster as representing pre- or post-synapses:
+
+
+```python
+pre_lst, post_lst, neutral_lst = [], [], []
+for i in range(len(cluster_labels)):
+    if plot_data[i, 0] > 60:
+        pre_lst.append(cluster_labels[i])
+    elif plot_data[i, 0] < 40:
+        post_lst.append(cluster_labels[i])
+    else:
+        neutral_lst.append(cluster_labels[i])
+
+pre_post_dict = {'pre-syn': pre_lst, 'post-syn': post_lst, 'neutral': neutral_lst}
+syn_adata.obs['pre_post'] = np.nan
+for i in pre_post_dict.keys():
+    ind = pd.Series(syn_adata.obs['kmeans_pre_post']).isin(pre_post_dict[i])
+    syn_adata.obs.loc[ind, 'pre_post'] = i
+print(pre_lst, post_lst, neutral_lst)
+```
+
+    ['0', '1', '3', '4', '5', '6', '8', '9'] ['2', '7'] []
+
+
+Spatial distribution of the identified pre- and post-synapses:
+
+
+```python
+syn_adata.obs["pre_post"] = pd.Categorical(syn_adata.obs["pre_post"], categories = ['pre-syn', 'post-syn'], ordered = True)
+
+ax = sc.pl.scatter(syn_adata, alpha = 1, x = 'global_y', y = 'global_x', color = 'pre_post', size = 30, title = " ", show = False)
+ax.grid(False)
+ax.set_aspect('equal', 'box')
+plt.savefig("tutorial_files/synapses_pre_post.png", dpi = 120)
+plt.show()
+```
+
+
+    
+![png](tutorial_files/tutorial_48_0.png)
+    
+
+
+
+```python
+
+```
