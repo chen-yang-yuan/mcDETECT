@@ -277,10 +277,10 @@ The spot-level spatial domain assignment looks like:
 
 ```python
 # plot spatial domains
-%matplotlib inline
 sc.set_figure_params(scanpy = True, figsize = (5, 5))
 ax = sc.pl.scatter(spots, alpha = 1, x = "global_y", y = "global_x", color = "refined_pred", title = " ", show = False, size = 800)
 ax.grid(False)
+plt.savefig("tutorial_files/spatial_domain.png", dpi=300)
 plt.show()
 ```
 
