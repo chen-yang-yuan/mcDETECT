@@ -60,7 +60,7 @@ sc.settings.verbosity = 0
 
 ### 3. Read in data
 
-The toy dataset used in this tutorial is part of the isocortex region from (Xenium 5K mouse brain data)[https://www.10xgenomics.com/datasets/xenium-prime-fresh-frozen-mouse-brain].
+The toy dataset used in this tutorial is part of the isocortex region from [Xenium 5K mouse brain data](https://www.10xgenomics.com/datasets/xenium-prime-fresh-frozen-mouse-brain).
 
 `mcDETECT` requires the following input:
 
