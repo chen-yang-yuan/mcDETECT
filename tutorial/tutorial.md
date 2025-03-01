@@ -64,7 +64,7 @@ The toy dataset used in this tutorial is part of the isocortex region from [Xeni
 
 `mcDETECT` requires the following input:
 
-* Transcript file: dataframe recording gene identity and 3D spatial coordinates of each mRNA molecule
+* Transcript file: dataframe, records gene identity and 3D spatial coordinates of each mRNA molecule
 
 
 ```python
@@ -88,14 +88,14 @@ print(transcripts.head().to_string())
     163006775  fghnlpdi-1                 1   Aatf  5969.406250  2149.406250  17.625000
 
 
-* User-defined synaptic markers: list
+* Synaptic markers: user-defined list
 
 
 ```python
 syn_genes = ['Snap25', 'Camk2a', 'Slc17a7', 'Vamp2', 'Syp', 'Syn1', 'Dlg4', 'Gria2', 'Gap43', 'Gria1', 'Bsn', 'Slc32a1']
 ```
 
-* (Optional) User-defined negative control markers: list. If `None`, negative control filtering will be disabled.
+* (Optional) Negative control markers: user-defined list. If `None`, negative control filtering will be disabled.
 
 
 ```python
@@ -109,7 +109,7 @@ print(nc_genes[:10])
 
 ### 4. Parameter settings
 
-Instantiating `mc` of `mcDETECT`:
+Instantiating an object `mc` from `mcDETECT`:
 
 
 ```python
