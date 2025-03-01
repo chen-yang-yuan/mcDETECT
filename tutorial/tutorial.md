@@ -95,13 +95,17 @@ print(transcripts.head().to_string())
 syn_genes = ['Snap25', 'Camk2a', 'Slc17a7', 'Vamp2', 'Syp', 'Syn1', 'Dlg4', 'Gria2', 'Gap43', 'Gria1', 'Bsn', 'Slc32a1']
 ```
 
-* User-defined negative control markers (list). Here I use the genes reported by [Niu _et al._](https://www.nature.com/articles/s41587-022-01635-1) as being upregulated in neuronal nuclei compared to synapses.
+* User-defined negative control markers (list)
 
 
 ```python
 nc_genes = pd.read_csv('toy_data/negative_controls.csv')
 nc_genes = list(nc_genes['Gene'])
+print(nc_genes[:10])
 ```
+
+    ['Neat1', 'Robo3', 'Sec1', 'Syne4', 'Xist', 'Thpo', 'Spaca6', 'Trmt13', 'Fbxl12', 'Cenpa']
+
 
 ### 4. Parameter settings
 
