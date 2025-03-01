@@ -504,8 +504,3 @@ plt.show()
 ![png](tutorial_files/tutorial_48_0.png)
     
 
-
-
-```python
-
-```
