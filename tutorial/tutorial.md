@@ -60,6 +60,8 @@ warnings.filterwarnings("ignore")
 sc.settings.verbosity = 0
 ```
 
+You may also need to have `pyarrow` and `fastparquet` installed for reading `.parquet` files.
+
 ### 3. Read in data
 
 The toy dataset used in this tutorial is part of the isocortex region from the [Xenium 5K mouse brain data](https://www.10xgenomics.com/datasets/xenium-prime-fresh-frozen-mouse-brain).
@@ -288,7 +290,7 @@ plt.show()
 
 
     
-![png](tutorial_files/tutorial_28_0.png)
+![png](tutorial_files/tutorial_29_0.png)
     
 
 
@@ -341,7 +343,7 @@ plt.show()
 
 
     
-![png](tutorial_files/tutorial_34_0.png)
+![png](tutorial_files/tutorial_35_0.png)
     
 
 
@@ -458,7 +460,7 @@ plt.show()
 
 
     
-![png](tutorial_files/tutorial_44_0.png)
+![png](tutorial_files/tutorial_45_0.png)
     
 
 
@@ -501,6 +503,6 @@ plt.show()
 
 
     
-![png](tutorial_files/tutorial_48_0.png)
+![png](tutorial_files/tutorial_49_0.png)
     
 
