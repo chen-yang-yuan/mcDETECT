@@ -324,6 +324,7 @@ for i in range(synapses.shape[0]):
     closest_y = closest(y_grid, synapses['sphere_y'].iloc[i])
     target_label = labels_df[(labels_df['global_x'] == closest_x) & (labels_df['global_y'] == closest_y)]
     synapses['brain_area'].iloc[i] = target_label['brain_area'][0]
+synapses['brain_area'] = synapses['brain_area'].astype(str)
 ```
 
 The resulting spatial distribution of all identified synapses, colored by brain region:
