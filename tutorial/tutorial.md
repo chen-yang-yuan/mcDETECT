@@ -32,7 +32,7 @@ mcDETECT.__version__
 
 
 
-    '1.0.10'
+    '1.0.12'
 
 
 
@@ -169,12 +169,12 @@ The output is a dataframe of synapse metadata:
 print(synapses.head().to_string())
 ```
 
-          sphere_x     sphere_y   sphere_z    layer_z  sphere_r  size  comp  in_nucleus    gene
-    0  5861.525313  2021.429797  15.259961  15.259961  1.115372     8     3         0.0  Snap25
-    1  5823.012341  2477.027071  18.744452  18.744452  1.400544    13     5         0.0  Snap25
-    2  5805.578936  2419.213116  18.711572  18.711572  1.355859     9     3         0.0  Snap25
-    3  5831.996698  2545.542771  18.262820  18.262820  1.168398     7     2         0.0  Snap25
-    4  5800.522809  2731.226949  16.212029  16.212029  1.322234     7     2         0.0  Snap25
+          sphere_x     sphere_y   sphere_z  layer_z  sphere_r  size  comp  in_nucleus    gene
+    0  5861.525313  2021.429797  15.259961       15  1.115372   8.0   3.0           0  Snap25
+    1  5823.012341  2477.027071  18.744452       18  1.400544  13.0   5.0           0  Snap25
+    2  5805.578936  2419.213116  18.711572       18  1.355859   9.0   3.0           0  Snap25
+    3  5831.996698  2545.542771  18.262820       18  1.168398   7.0   2.0           0  Snap25
+    4  5754.971387  2574.015607  19.978902       19  1.301102   7.0   2.0           0  Snap25
 
 
 * `sphere_x`, `sphere_y`, `sphere_z`: 3D spatial coordinates of each identified synapse
@@ -324,7 +324,6 @@ for i in range(synapses.shape[0]):
     closest_y = closest(y_grid, synapses['sphere_y'].iloc[i])
     target_label = labels_df[(labels_df['global_x'] == closest_x) & (labels_df['global_y'] == closest_y)]
     synapses['brain_area'].iloc[i] = target_label['brain_area'][0]
-synapses['brain_area'] = synapses['brain_area'].astype(str)
 ```
 
 The resulting spatial distribution of all identified synapses, colored by brain region:
@@ -367,7 +366,7 @@ syn_adata
 
 
 
-    AnnData object with n_obs × n_vars = 1279 × 5006
+    AnnData object with n_obs × n_vars = 1494 × 5006
         obs: 'global_x', 'global_y', 'global_z', 'layer_z', 'sphere_r', 'size', 'comp', 'in_nucleus', 'gene', 'brain_area', 'synapse_id'
         var: 'genes'
 
@@ -389,7 +388,7 @@ syn_adata_subset
 
 
 
-    AnnData object with n_obs × n_vars = 1279 × 20
+    AnnData object with n_obs × n_vars = 1494 × 20
         obs: 'global_x', 'global_y', 'global_z', 'layer_z', 'sphere_r', 'size', 'comp', 'in_nucleus', 'gene', 'brain_area', 'synapse_id'
         var: 'genes'
 
@@ -486,7 +485,7 @@ for i in pre_post_dict.keys():
 print(pre_lst, post_lst, neutral_lst)
 ```
 
-    ['0', '1', '3', '4', '5', '6', '8', '9'] ['2', '7'] []
+    ['1', '2', '3', '4', '5', '6', '7', '8'] ['0', '9'] []
 
 
 Spatial distribution of the identified pre- and post-synapses:
