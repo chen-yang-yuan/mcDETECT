@@ -1,6 +1,5 @@
 LICENSE
 README.md
-pyproject.toml
 setup.py
 mcDETECT/__init__.py
 mcDETECT/model.py

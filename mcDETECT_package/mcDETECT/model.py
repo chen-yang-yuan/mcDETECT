@@ -167,9 +167,7 @@ class mcDETECT:
             sphere = pd.DataFrame(list(zip(sphere_x, sphere_y, sphere_z, layer_z, sphere_r, sphere_size, sphere_comp, sphere_score)),
                                   columns = ["sphere_x", "sphere_y", "sphere_z", "layer_z", "sphere_r", "size", "comp", "in_nucleus"])
             sphere["gene"] = [j] * sphere.shape[0]
-            sphere["gene"] = sphere["gene"].astype(str)
-            sphere["size"] = pd.to_numeric(sphere["size"])
-            sphere["comp"] = pd.to_numeric(sphere["comp"])
+            sphere = sphere.astype({"sphere_x": float, "sphere_y": float, "sphere_z": float, "layer_z": int, "sphere_r": float, "size": float, "comp": float, "in_nucleus": int, "gene": str})
             
             # split low- and high-in-nucleus spheres
             sphere_low = sphere[(sphere["sphere_r"] < self.size_thr) & (sphere["in_nucleus"] < self.in_nucleus_thr[0])]
@@ -347,6 +345,7 @@ class mcDETECT:
         # construct spatial transcriptome profile
         adata = anndata.AnnData(X = np.transpose(X), obs = synapse)
         adata.obs["synapse_id"] = ["syn_{}".format(i) for i in range(synapse.shape[0])]
+        adata.obs["synapse_id"] = adata.obs["synapse_id"].astype(str)
         adata.obs.rename(columns = {"sphere_x": "global_x", "sphere_y": "global_y", "sphere_z": "global_z"}, inplace = True)
         adata.var["genes"] = genes
         adata.var_names = genes
