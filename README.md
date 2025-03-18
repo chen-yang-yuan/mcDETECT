@@ -75,6 +75,6 @@ Source code: [mcDETECT_package](mcDETECT_package).<br>
 
 We are continuing adding new features. Bug reports or feature requests are welcome.<br>
 
-Last update: 03/18/2025, version 1.0.11.
+Last update: 03/18/2025, version 1.0.12.
 
 ## Citation
