@@ -68,8 +68,8 @@ class mcDETECT:
     def construct_grid(self, grid_len = None):
         if grid_len is None:
             grid_len = self.grid_len
-        x_min, x_max = np.min(self.transcripts['global_x']), np.max(self.transcripts['global_x'])
-        y_min, y_max = np.min(self.transcripts['global_y']), np.max(self.transcripts['global_y'])
+        x_min, x_max = np.min(self.transcripts["global_x"]), np.max(self.transcripts["global_x"])
+        y_min, y_max = np.min(self.transcripts["global_y"]), np.max(self.transcripts["global_y"])
         x_min = np.floor(x_min / grid_len) * grid_len
         x_max = np.ceil(x_max / grid_len) * grid_len
         y_min = np.floor(y_min / grid_len) * grid_len
@@ -82,14 +82,14 @@ class mcDETECT:
     # [INNER] calculate tissue area, input for poisson_select()
     def tissue_area(self):
         x_bins, y_bins = self.construct_grid(grid_len = None)
-        hist, _, _ = np.histogram2d(self.transcripts['global_x'], self.transcripts['global_y'], bins = [x_bins, y_bins])
+        hist, _, _ = np.histogram2d(self.transcripts["global_x"], self.transcripts["global_y"], bins = [x_bins, y_bins])
         area = np.count_nonzero(hist) * (self.grid_len ** 2)
         return area
     
     
     # [INNER] calculate optimal min_samples, input for dbscan()
     def poisson_select(self, gene_name):
-        num_trans = np.sum(self.transcripts['target'] == gene_name)
+        num_trans = np.sum(self.transcripts["target"] == gene_name)
         bg_density = num_trans / self.tissue_area()
         cutoff_density = poisson.ppf(self.cutoff_prob, mu = self.alpha * bg_density * (np.pi * self.eps ** 2))
         optimal_m = int(max(cutoff_density, self.low_bound))
@@ -97,32 +97,32 @@ class mcDETECT:
     
     
     # [INTERMEDIATE] dictionary, low- and high-in-nucleus spheres for each synaptic marker
-    def dbscan(self, target_names = None, write_csv = False, write_path = './'):
+    def dbscan(self, target_names = None, write_csv = False, write_path = "./"):
         
-        if self.type != 'Xenium':
-            z_grid = list(np.unique(self.transcripts['global_z']))
+        if self.type != "Xenium":
+            z_grid = list(np.unique(self.transcripts["global_z"]))
             z_grid.sort()
         
         if target_names is None:
             target_names = self.syn_genes
-        transcripts = self.transcripts[self.transcripts['target'].isin(target_names)]
+        transcripts = self.transcripts[self.transcripts["target"].isin(target_names)]
         
         num_individual, data_low, data_high = [], {}, {}
         
         for j in target_names:
             
             # split transcripts
-            target = transcripts[transcripts['target'] == j]
-            others = transcripts[transcripts['target'] != j]
-            tree = make_tree(d1 = np.array(others['global_x']), d2 = np.array(others['global_y']), d3 = np.array(others['global_z']))
+            target = transcripts[transcripts["target"] == j]
+            others = transcripts[transcripts["target"] != j]
+            tree = make_tree(d1 = np.array(others["global_x"]), d2 = np.array(others["global_y"]), d3 = np.array(others["global_z"]))
             
             # 3D DBSCAN
             if self.minspl is None:
                 min_spl = self.poisson_select(j)
             else:
                 min_spl = self.minspl
-            X = np.array(target[['global_x', 'global_y', 'global_z']])
-            db = DBSCAN(eps = self.eps, min_samples = min_spl, algorithm = 'kd_tree').fit(X)
+            X = np.array(target[["global_x", "global_y", "global_z"]])
+            db = DBSCAN(eps = self.eps, min_samples = min_spl, algorithm = "kd_tree").fit(X)
             labels = db.labels_
             n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
             
@@ -133,12 +133,12 @@ class mcDETECT:
                 
                 # find minimum enclosing spheres
                 temp = target[labels == k]
-                temp_in_nucleus = np.sum(temp['overlaps_nucleus'])
+                temp_in_nucleus = np.sum(temp["overlaps_nucleus"])
                 temp_size = temp.shape[0]
-                temp = temp[['global_x', 'global_y', 'global_z']]
+                temp = temp[["global_x", "global_y", "global_z"]]
                 temp = temp.drop_duplicates()
                 center, r2 = miniball.get_bounding_ball(np.array(temp), epsilon=1e-8)
-                if self.type != 'Xenium':
+                if self.type != "Xenium":
                     closest_z = closest(z_grid, center[2])
                 else:
                     closest_z = center[2]
@@ -146,9 +146,9 @@ class mcDETECT:
                 # calculate size, composition, and in-nucleus score
                 other_idx = tree.query_ball_point([center[0], center[1], center[2]], np.sqrt(r2))
                 other_trans = others.iloc[other_idx]
-                other_in_nucleus = np.sum(other_trans['overlaps_nucleus'])
+                other_in_nucleus = np.sum(other_trans["overlaps_nucleus"])
                 other_size = other_trans.shape[0]
-                other_comp = len(np.unique(other_trans['target']))
+                other_comp = len(np.unique(other_trans["target"]))
                 total_size = temp_size + other_size
                 total_comp = 1 + other_comp
                 local_score = (temp_in_nucleus + other_in_nucleus) / total_size
@@ -165,16 +165,19 @@ class mcDETECT:
             
             # basic features for all spheres from each synaptic marker
             sphere = pd.DataFrame(list(zip(sphere_x, sphere_y, sphere_z, layer_z, sphere_r, sphere_size, sphere_comp, sphere_score)),
-                                  columns = ['sphere_x', 'sphere_y', 'sphere_z', 'layer_z', 'sphere_r', 'size', 'comp', 'in_nucleus'])
-            sphere['gene'] = [j] * sphere.shape[0]
+                                  columns = ["sphere_x", "sphere_y", "sphere_z", "layer_z", "sphere_r", "size", "comp", "in_nucleus"])
+            sphere["gene"] = [j] * sphere.shape[0]
+            sphere["gene"] = sphere["gene"].astype(str)
+            sphere["size"] = pd.to_numeric(sphere["size"])
+            sphere["comp"] = pd.to_numeric(sphere["comp"])
             
             # split low- and high-in-nucleus spheres
-            sphere_low = sphere[(sphere['sphere_r'] < self.size_thr) & (sphere['in_nucleus'] < self.in_nucleus_thr[0])]
-            sphere_high = sphere[(sphere['sphere_r'] < self.size_thr) & (sphere['in_nucleus'] > self.in_nucleus_thr[1])]
+            sphere_low = sphere[(sphere["sphere_r"] < self.size_thr) & (sphere["in_nucleus"] < self.in_nucleus_thr[0])]
+            sphere_high = sphere[(sphere["sphere_r"] < self.size_thr) & (sphere["in_nucleus"] > self.in_nucleus_thr[1])]
             
             if write_csv:
-                sphere_low.to_csv(write_path + j + ' sphere.csv', index=0)
-                sphere_high.to_csv(write_path + j + ' sphere_high.csv', index=0)
+                sphere_low.to_csv(write_path + j + " sphere.csv", index=0)
+                sphere_high.to_csv(write_path + j + " sphere_high.csv", index=0)
             
             num_individual.append(sphere_low.shape[0])
             data_low[target_names.index(j)] = sphere_low
@@ -186,16 +189,16 @@ class mcDETECT:
     
     # [INNER] merge points from two overlapped spheres, input for remove_overlaps()
     def find_points(self, sphere_a, sphere_b):
-        transcripts = self.transcripts[self.transcripts['target'].isin(self.syn_genes)]
-        tree_temp = make_tree(d1 = np.array(transcripts['global_x']), d2 = np.array(transcripts['global_y']), d3 = np.array(transcripts['global_z']))
-        idx_a = tree_temp.query_ball_point([sphere_a['sphere_x'], sphere_a['sphere_y'], sphere_a['sphere_z']], sphere_a['sphere_r'])
+        transcripts = self.transcripts[self.transcripts["target"].isin(self.syn_genes)]
+        tree_temp = make_tree(d1 = np.array(transcripts["global_x"]), d2 = np.array(transcripts["global_y"]), d3 = np.array(transcripts["global_z"]))
+        idx_a = tree_temp.query_ball_point([sphere_a["sphere_x"], sphere_a["sphere_y"], sphere_a["sphere_z"]], sphere_a["sphere_r"])
         points_a = transcripts.iloc[idx_a]
-        points_a = points_a[points_a['target'] == sphere_a['gene']]
-        idx_b = tree_temp.query_ball_point([sphere_b['sphere_x'], sphere_b['sphere_y'], sphere_b['sphere_z']], sphere_b['sphere_r'])
+        points_a = points_a[points_a["target"] == sphere_a["gene"]]
+        idx_b = tree_temp.query_ball_point([sphere_b["sphere_x"], sphere_b["sphere_y"], sphere_b["sphere_z"]], sphere_b["sphere_r"])
         points_b = transcripts.iloc[idx_b]
-        points_b = points_b[points_b['target'] == sphere_b['gene']]
+        points_b = points_b[points_b["target"] == sphere_b["gene"]]
         points = pd.concat([points_a, points_b])
-        points = points[['global_x', 'global_y', 'global_z']]
+        points = points[["global_x", "global_y", "global_z"]]
         return points
     
     
@@ -239,10 +242,10 @@ class mcDETECT:
                         elif not c1 and c2_1:                       # replace A with new sphere and remove B
                             points_union = np.array(self.find_points(sphere_a, sphere_b))
                             new_center, new_radius = miniball.get_bounding_ball(points_union, epsilon=1e-8)
-                            set_a.loc[i, 'sphere_x'] = new_center[0]
-                            set_a.loc[i, 'sphere_y'] = new_center[1]
-                            set_a.loc[i, 'sphere_z'] = new_center[2]
-                            set_a.loc[i, 'sphere_r'] = self.s * new_radius
+                            set_a.loc[i, "sphere_x"] = new_center[0]
+                            set_a.loc[i, "sphere_y"] = new_center[1]
+                            set_a.loc[i, "sphere_z"] = new_center[2]
+                            set_a.loc[i, "sphere_r"] = self.s * new_radius
                             set_b.drop(index = j, inplace = True)
         
         set_a = set_a.reset_index(drop = True)
@@ -268,36 +271,36 @@ class mcDETECT:
         adata_low = self.profile(sphere_low, self.nc_genes)
         adata_high = self.profile(sphere_high, self.nc_genes)
         adata = anndata.concat([adata_low, adata_high], axis = 0, merge = "same")
-        adata.var['genes'] = adata.var.index
+        adata.var["genes"] = adata.var.index
         adata.obs_keys = list(np.arange(adata.shape[0]))
-        adata.obs['type'] = ['low'] * adata_low.shape[0] + ['high'] * adata_high.shape[0]
-        adata.obs['type'] = pd.Categorical(adata.obs['type'], categories = ["low", "high"], ordered = True)
+        adata.obs["type"] = ["low"] * adata_low.shape[0] + ["high"] * adata_high.shape[0]
+        adata.obs["type"] = pd.Categorical(adata.obs["type"], categories = ["low", "high"], ordered = True)
         
         # DE analysis of negative control genes
-        sc.tl.rank_genes_groups(adata, 'type', method = 't-test')
-        names = adata.uns['rank_genes_groups']['names']
+        sc.tl.rank_genes_groups(adata, "type", method = "t-test")
+        names = adata.uns["rank_genes_groups"]["names"]
         names = pd.DataFrame(names)
-        logfc = adata.uns['rank_genes_groups']['logfoldchanges']
+        logfc = adata.uns["rank_genes_groups"]["logfoldchanges"]
         logfc = pd.DataFrame(logfc)
-        pvals = adata.uns['rank_genes_groups']['pvals']
+        pvals = adata.uns["rank_genes_groups"]["pvals"]
         pvals = pd.DataFrame(pvals)
 
         # select top upregulated negative control genes
-        df = pd.DataFrame({'names': names["high"], 'logfc': logfc["high"], 'pvals': pvals["high"]})
-        df = df[df['logfc'] >= 0]
-        df = df.sort_values(by = ['pvals'], ascending = True)
-        nc_genes_final = list(df['names'].head(self.nc_top))
+        df = pd.DataFrame({"names": names["high"], "logfc": logfc["high"], "pvals": pvals["high"]})
+        df = df[df["logfc"] >= 0]
+        df = df.sort_values(by = ["pvals"], ascending = True)
+        nc_genes_final = list(df["names"].head(self.nc_top))
         
         # negative control filtering
-        nc_transcripts_final = self.transcripts[self.transcripts['target'].isin(nc_genes_final)]
-        tree = make_tree(d1 = np.array(nc_transcripts_final['global_x']), d2 = np.array(nc_transcripts_final['global_y']), d3 = np.array(nc_transcripts_final['global_z']))
+        nc_transcripts_final = self.transcripts[self.transcripts["target"].isin(nc_genes_final)]
+        tree = make_tree(d1 = np.array(nc_transcripts_final["global_x"]), d2 = np.array(nc_transcripts_final["global_y"]), d3 = np.array(nc_transcripts_final["global_z"]))
         pass_idx = [0] * sphere_low.shape[0]
         for i in range(sphere_low.shape[0]):
             temp = sphere_low.iloc[i]
-            nc_idx = tree.query_ball_point([temp['sphere_x'], temp['sphere_y'], temp['sphere_z']], temp['sphere_r'])
+            nc_idx = tree.query_ball_point([temp["sphere_x"], temp["sphere_y"], temp["sphere_z"]], temp["sphere_r"])
             if len(nc_idx) == 0:
                 pass_idx[i] = 1
-            elif len(nc_idx) / temp['size'] < self.nc_thr:
+            elif len(nc_idx) / temp["size"] < self.nc_thr:
                 pass_idx[i] = 2
         sphere = sphere_low[np.array(pass_idx) != 0]
         sphere = sphere.reset_index(drop = True)
@@ -323,29 +326,29 @@ class mcDETECT:
     def profile(self, synapse, genes = None, print_itr = False):
         
         if genes is None:
-            genes = list(np.unique(self.transcripts['target']))
+            genes = list(np.unique(self.transcripts["target"]))
             transcripts = self.transcripts
         else:
-            transcripts = self.transcripts[self.transcripts['target'].isin(genes)]
-        tree = make_tree(d1 = np.array(transcripts['global_x']), d2 = np.array(transcripts['global_y']), d3 = np.array(transcripts['global_z']))
+            transcripts = self.transcripts[self.transcripts["target"].isin(genes)]
+        tree = make_tree(d1 = np.array(transcripts["global_x"]), d2 = np.array(transcripts["global_y"]), d3 = np.array(transcripts["global_z"]))
         
         # construct gene count matrix
         X = np.zeros((len(genes), synapse.shape[0]))
         for i in range(synapse.shape[0]):
             temp = synapse.iloc[i]
-            target_idx = tree.query_ball_point([temp['sphere_x'], temp['sphere_y'], temp['layer_z']], temp['sphere_r'])
+            target_idx = tree.query_ball_point([temp["sphere_x"], temp["sphere_y"], temp["layer_z"]], temp["sphere_r"])
             target_trans = transcripts.iloc[target_idx]
-            target_gene = list(target_trans['target'])
+            target_gene = list(target_trans["target"])
             for j in np.unique(target_gene):
                 X[genes.index(j), i] = target_gene.count(j)
             if (print_itr) & (i % 5000 == 0):
-                print('{} out of {} synapses profiled!'.format(i, synapse.shape[0]))
+                print("{} out of {} synapses profiled!".format(i, synapse.shape[0]))
         
         # construct spatial transcriptome profile
         adata = anndata.AnnData(X = np.transpose(X), obs = synapse)
-        adata.obs['synapse_id'] = ['syn_{}'.format(i) for i in range(synapse.shape[0])]
-        adata.obs.rename(columns = {'sphere_x': 'global_x', 'sphere_y': 'global_y', 'sphere_z': 'global_z'}, inplace = True)
-        adata.var['genes'] = genes
+        adata.obs["synapse_id"] = ["syn_{}".format(i) for i in range(synapse.shape[0])]
+        adata.obs.rename(columns = {"sphere_x": "global_x", "sphere_y": "global_y", "sphere_z": "global_z"}, inplace = True)
+        adata.var["genes"] = genes
         adata.var_names = genes
         adata.var_keys = genes
         return adata
@@ -355,10 +358,10 @@ class mcDETECT:
     def spot_expression(self, grid_len, genes = None):
         
         if genes is None:
-            genes = list(np.unique(self.transcripts['target']))
+            genes = list(np.unique(self.transcripts["target"]))
             transcripts = self.transcripts
         else:
-            transcripts = self.transcripts[self.transcripts['target'].isin(genes)]
+            transcripts = self.transcripts[self.transcripts["target"].isin(genes)]
         
         # construct bins
         x_bins, y_bins = self.construct_grid(grid_len = grid_len)
@@ -377,8 +380,8 @@ class mcDETECT:
         
         # count matrix
         for k_idx, k in enumerate(genes):
-            target_gene = transcripts[transcripts['target'] == k]
-            count_gene, _, _ = np.histogram2d(target_gene['global_x'], target_gene['global_y'], bins = [x_bins, y_bins])
+            target_gene = transcripts[transcripts["target"] == k]
+            count_gene, _, _ = np.histogram2d(target_gene["global_x"], target_gene["global_y"], bins = [x_bins, y_bins])
             X[k_idx, :] = count_gene.flatten()
             if k_idx % 100 == 0:
                 print("{} out of {} genes profiled!".format(k_idx, len(genes)))
@@ -386,15 +389,15 @@ class mcDETECT:
         # spot id
         spot_id = []
         for i in range(len(global_x)):
-            id = 'spot_' + str(i)
+            id = "spot_" + str(i)
             spot_id.append(id)
         
         # assemble data
         adata = anndata.AnnData(X = np.transpose(X))
-        adata.obs['spot_id'] = spot_id
-        adata.obs['global_x'] = global_x
-        adata.obs['global_y'] = global_y
-        adata.var['genes'] = genes
+        adata.obs["spot_id"] = spot_id
+        adata.obs["global_x"] = global_x
+        adata.obs["global_y"] = global_y
+        adata.var["genes"] = genes
         adata.var_names = genes
         adata.var_keys = genes
         return adata
@@ -403,7 +406,7 @@ class mcDETECT:
     # [MAIN] anndata, spot-level synapse metadata
     def spot_synapse(self, synapse, spot):
         
-        x_grid, y_grid = list(np.unique(spot.obs['global_x'])), list(np.unique(spot.obs['global_y']))
+        x_grid, y_grid = list(np.unique(spot.obs["global_x"])), list(np.unique(spot.obs["global_y"]))
         diameter = x_grid[1] - x_grid[0]
         
         indicator, synapse_count, synapse_radius, synapse_size, synapse_score = [], [], [], [], []
@@ -413,7 +416,7 @@ class mcDETECT:
             for j in y_grid:
                 y_min_temp = j
                 y_max_temp = j + diameter
-                syn_temp = synapse[(synapse['sphere_x'] > x_min_temp) & (synapse['sphere_x'] < x_max_temp) & (synapse['sphere_y'] > y_min_temp) & (synapse['sphere_y'] < y_max_temp)]
+                syn_temp = synapse[(synapse["sphere_x"] > x_min_temp) & (synapse["sphere_x"] < x_max_temp) & (synapse["sphere_y"] > y_min_temp) & (synapse["sphere_y"] < y_max_temp)]
                 indicator.append(int(syn_temp.shape[0] > 0))
                 synapse_count.append(syn_temp.shape[0])
                 if syn_temp.shape[0] == 0:
@@ -421,13 +424,13 @@ class mcDETECT:
                     synapse_size.append(0)
                     synapse_score.append(0)
                 else:
-                    synapse_radius.append(np.nanmean(syn_temp['sphere_r']))
-                    synapse_size.append(np.nanmean(syn_temp['size']))
-                    synapse_score.append(np.nanmean(syn_temp['in_nucleus']))
+                    synapse_radius.append(np.nanmean(syn_temp["sphere_r"]))
+                    synapse_size.append(np.nanmean(syn_temp["size"]))
+                    synapse_score.append(np.nanmean(syn_temp["in_nucleus"]))
         
-        spot.obs['indicator'] = indicator
-        spot.obs['syn_count'] = synapse_count
-        spot.obs['syn_radius'] = synapse_radius
-        spot.obs['syn_size'] = synapse_size
-        spot.obs['syn_score'] = synapse_score
+        spot.obs["indicator"] = indicator
+        spot.obs["syn_count"] = synapse_count
+        spot.obs["syn_radius"] = synapse_radius
+        spot.obs["syn_size"] = synapse_size
+        spot.obs["syn_score"] = synapse_score
         return spot
