@@ -2,12 +2,12 @@ from setuptools import setup, find_packages
 
 setup(
     name = "mcDETECT",
-    version = "1.0.12",
+    version = "2.0.0",
     packages = find_packages(),
     install_requires = ["anndata", "miniball", "numpy", "pandas", "rtree", "scanpy", "scikit-learn", "scipy", "shapely"],
     author = "Chenyang Yuan",
     author_email = "chenyang.yuan@emory.edu",
-    description = "mcDETECT: Decoding 3D Spatial Synaptic Transcriptomes with Subcellular-Resolution Spatial Transcriptomics",
+    description = "Uncovering the dark transcriptome in polarized neuronal compartments with mcDETECT",
     long_description = open("README.md").read(),
     long_description_content_type = "text/markdown",
     url = "https://github.com/chen-yang-yuan/mcDETECT",

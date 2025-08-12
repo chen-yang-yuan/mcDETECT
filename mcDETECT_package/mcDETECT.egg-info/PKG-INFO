@@ -1,7 +1,7 @@
-Metadata-Version: 2.2
+Metadata-Version: 2.4
 Name: mcDETECT
-Version: 1.0.12
-Summary: mcDETECT: Decoding 3D Spatial Synaptic Transcriptomes with Subcellular-Resolution Spatial Transcriptomics
+Version: 2.0.0
+Summary: Uncovering the dark transcriptome in polarized neuronal compartments with mcDETECT
 Home-page: https://github.com/chen-yang-yuan/mcDETECT
 Author: Chenyang Yuan
 Author-email: chenyang.yuan@emory.edu
@@ -26,6 +26,7 @@ Dynamic: classifier
 Dynamic: description
 Dynamic: description-content-type
 Dynamic: home-page
+Dynamic: license-file
 Dynamic: requires-dist
 Dynamic: requires-python
 Dynamic: summary

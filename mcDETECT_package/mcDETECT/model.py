@@ -9,34 +9,9 @@ from scipy.spatial import cKDTree
 from scipy.stats import poisson
 from shapely.geometry import Point
 from sklearn.cluster import DBSCAN
+from sklearn.preprocessing import OneHotEncoder
 
-
-def closest(lst, K):
-    return lst[min(range(len(lst)), key = lambda i: abs(lst[i] - K))]
-
-
-def make_tree(d1 = None, d2 = None, d3 = None):
-    active_dimensions = [dimension for dimension in [d1, d2, d3] if dimension is not None]
-    if len(active_dimensions) == 1:
-        points = np.c_[active_dimensions[0].ravel()]
-    elif len(active_dimensions) == 2:
-        points = np.c_[active_dimensions[0].ravel(), active_dimensions[1].ravel()]
-    elif len(active_dimensions) == 3:
-        points = np.c_[active_dimensions[0].ravel(), active_dimensions[1].ravel(), active_dimensions[2].ravel()]
-    return cKDTree(points)
-
-
-def make_rtree(spheres):
-    p = index.Property()
-    idx = index.Index(properties = p)
-    for i, sphere in enumerate(spheres.itertuples()):
-        center = Point(sphere.sphere_x, sphere.sphere_y)
-        bounds = (center.x - sphere.sphere_r,
-                  center.y - sphere.sphere_r,
-                  center.x + sphere.sphere_r,
-                  center.y + sphere.sphere_r)
-        idx.insert(i, bounds)
-    return idx
+from utils import *
 
 
 class mcDETECT:
@@ -100,7 +75,7 @@ class mcDETECT:
     def dbscan(self, target_names = None, write_csv = False, write_path = "./"):
         
         if self.type != "Xenium":
-            z_grid = list(np.unique(self.transcripts["global_z"]))
+            z_grid = list(self.transcripts["global_z"].unique())
             z_grid.sort()
         
         if target_names is None:
@@ -148,7 +123,7 @@ class mcDETECT:
                 other_trans = others.iloc[other_idx]
                 other_in_nucleus = np.sum(other_trans["overlaps_nucleus"])
                 other_size = other_trans.shape[0]
-                other_comp = len(np.unique(other_trans["target"]))
+                other_comp = len(other_trans["target"].unique())
                 total_size = temp_size + other_size
                 total_comp = 1 + other_comp
                 local_score = (temp_in_nucleus + other_in_nucleus) / total_size
@@ -324,7 +299,7 @@ class mcDETECT:
     def profile(self, synapse, genes = None, print_itr = False):
         
         if genes is None:
-            genes = list(np.unique(self.transcripts["target"]))
+            genes = list(self.transcripts["target"].unique())
             transcripts = self.transcripts
         else:
             transcripts = self.transcripts[self.transcripts["target"].isin(genes)]
@@ -357,7 +332,7 @@ class mcDETECT:
     def spot_expression(self, grid_len, genes = None):
         
         if genes is None:
-            genes = list(np.unique(self.transcripts["target"]))
+            genes = list(self.transcripts["target"].unique())
             transcripts = self.transcripts
         else:
             transcripts = self.transcripts[self.transcripts["target"].isin(genes)]
@@ -401,35 +376,226 @@ class mcDETECT:
         adata.var_keys = genes
         return adata
     
+
+# [MAIN] anndata, spot-level neuron metadata
+def spot_neuron(adata_neuron, spot, grid_len = 50, neuron_loc_key = ["global_x", "global_y"], spot_loc_key = ["global_x", "global_y"]):
     
-    # [MAIN] anndata, spot-level synapse metadata
-    def spot_synapse(self, synapse, spot):
+    adata_neuron = adata_neuron.copy()
+    neurons = adata_neuron.obs
+    spot = spot.copy()
+    
+    half_len = grid_len / 2
+    
+    indicator, neuron_count = [], []
+    
+    for _, row in spot.obs.iterrows():
         
-        x_grid, y_grid = list(np.unique(spot.obs["global_x"])), list(np.unique(spot.obs["global_y"]))
-        diameter = x_grid[1] - x_grid[0]
+        x = row[spot_loc_key[0]]
+        y = row[spot_loc_key[1]]
+        neuron_temp = neurons[(neurons[neuron_loc_key[0]] > x - half_len) & (neurons[neuron_loc_key[0]] < x + half_len) & (neurons[neuron_loc_key[1]] > y - half_len) & (neurons[neuron_loc_key[1]] < y + half_len)]
+        indicator.append(int(len(neuron_temp) > 0))
+        neuron_count.append(len(neuron_temp))
+    
+    spot.obs["indicator"] = indicator
+    spot.obs["neuron_count"] = neuron_count
+    return spot
+
+    
+# [MAIN] anndata, spot-level granule metadata
+def spot_granule(granule, spot, grid_len = 50, gnl_loc_key = ["sphere_x", "sphere_y"], spot_loc_key = ["global_x", "global_y"]):
+    
+    granule = granule.copy()
+    spot = spot.copy()
+    
+    half_len = grid_len / 2
+
+    indicator, granule_count, granule_radius, granule_size, granule_score = [], [], [], [], []
+    
+    for _, row in spot.obs.iterrows():
         
-        indicator, synapse_count, synapse_radius, synapse_size, synapse_score = [], [], [], [], []
-        for i in x_grid:
-            x_min_temp = i
-            x_max_temp = i + diameter
-            for j in y_grid:
-                y_min_temp = j
-                y_max_temp = j + diameter
-                syn_temp = synapse[(synapse["sphere_x"] > x_min_temp) & (synapse["sphere_x"] < x_max_temp) & (synapse["sphere_y"] > y_min_temp) & (synapse["sphere_y"] < y_max_temp)]
-                indicator.append(int(syn_temp.shape[0] > 0))
-                synapse_count.append(syn_temp.shape[0])
-                if syn_temp.shape[0] == 0:
-                    synapse_radius.append(0)
-                    synapse_size.append(0)
-                    synapse_score.append(0)
-                else:
-                    synapse_radius.append(np.nanmean(syn_temp["sphere_r"]))
-                    synapse_size.append(np.nanmean(syn_temp["size"]))
-                    synapse_score.append(np.nanmean(syn_temp["in_nucleus"]))
+        x = row[spot_loc_key[0]]
+        y = row[spot_loc_key[1]]
+        gnl_temp = granule[(granule[gnl_loc_key[0]] >= x - half_len) & (granule[gnl_loc_key[0]] < x + half_len) & (granule[gnl_loc_key[1]] >= y - half_len) & (granule[gnl_loc_key[1]] < y + half_len)]
+        indicator.append(int(len(gnl_temp) > 0))
+        granule_count.append(len(gnl_temp))
+
+        if len(gnl_temp) == 0:
+            granule_radius.append(0)
+            granule_size.append(0)
+            granule_score.append(0)
+        else:
+            granule_radius.append(np.nanmean(gnl_temp["sphere_r"]))
+            granule_size.append(np.nanmean(gnl_temp["size"]))
+            granule_score.append(np.nanmean(gnl_temp["in_nucleus"]))
+    
+    spot.obs["indicator"] = indicator
+    spot.obs["gnl_count"] = granule_count
+    spot.obs["gnl_radius"] = granule_radius
+    spot.obs["gnl_size"] = granule_size
+    spot.obs["gnl_score"] = granule_score
+    return spot
+
+
+# [Main] anndata, neuron-granule colocalization
+def neighbor_granule(adata_neuron, granule_adata, radius = 10, sigma = None, loc_key = ["global_x", "global_y"]):
+    
+    adata_neuron = adata_neuron.copy()
+    granule_adata = granule_adata.copy()
+    
+    if sigma is None:
+        sigma = radius / 2
+    
+    # neuron and granule coordinates
+    neuron_coords = adata_neuron.obs[loc_key].values
+    gnl_coords = granule_adata.obs[loc_key].values
+    
+    # make tree
+    tree = make_tree(d1 = gnl_coords[:, 0], d2 = gnl_coords[:, 1])
+    
+    # query neighboring granules for each neuron
+    neighbor_indices = tree.query_ball_point(neuron_coords, r = radius)
+    
+    # record count and indices
+    granule_counts = np.array([len(indices) for indices in neighbor_indices])
+    adata_neuron.obs["neighbor_gnl_count"] = granule_counts
+    adata_neuron.uns["neighbor_gnl_indices"] = neighbor_indices
+    
+    # ---------- neighboring granule expression matrix ---------- #
+    n_neurons, n_genes = adata_neuron.n_obs, adata_neuron.n_vars
+    weighted_expr = np.zeros((n_neurons, n_genes))
+    
+    for i, indices in enumerate(neighbor_indices):
+        if len(indices) == 0:
+            continue
+        distances = np.linalg.norm(gnl_coords[indices] - neuron_coords[i], axis = 1)
+        weights = np.exp(- (distances ** 2) / (2 * sigma ** 2))
+        weights = weights / weights.sum()
+        weighted_expr[i] = np.average(granule_adata.X[indices], axis = 0, weights = weights)
+
+    adata_neuron.obsm["weighted_gnl_expression"] = weighted_expr
+    
+    # ---------- neighboring granule spatial feature ---------- #
+    features = []
+
+    for i, gnl_idx in enumerate(neighbor_indices):
         
-        spot.obs["indicator"] = indicator
-        spot.obs["syn_count"] = synapse_count
-        spot.obs["syn_radius"] = synapse_radius
-        spot.obs["syn_size"] = synapse_size
-        spot.obs["syn_score"] = synapse_score
-        return spot
+        feats = {}
+        feats["n_granules"] = len(gnl_idx)
+
+        if len(gnl_idx) == 0:
+            feats.update({"mean_distance": np.nan, "std_distance": np.nan, "radius_max": np.nan, "radius_min": np.nan, "density": 0, "center_offset_norm": np.nan, "anisotropy_ratio": np.nan})
+        else:
+            gnl_pos = gnl_coords[gnl_idx]
+            neuron_pos = neuron_coords[i]
+            dists = np.linalg.norm(gnl_pos - neuron_pos, axis = 1)
+            feats["mean_distance"] = dists.mean()
+            feats["std_distance"] = dists.std()
+            feats["radius_max"] = dists.max()
+            feats["radius_min"] = dists.min()
+            feats["density"] = len(gnl_idx) / (np.pi * radius ** 2)
+            centroid = gnl_pos.mean(axis = 0)
+            offset = centroid - neuron_pos
+            feats["center_offset_norm"] = np.linalg.norm(offset)
+            cov = np.cov((gnl_pos - neuron_pos).T)
+            eigvals = np.linalg.eigvalsh(cov)
+            if np.min(eigvals) > 0:
+                feats["anisotropy_ratio"] = np.max(eigvals) / np.min(eigvals)
+            else:
+                feats["anisotropy_ratio"] = np.nan
+
+        features.append(feats)
+    
+    spatial_df = pd.DataFrame(features, index = adata_neuron.obs_names)
+    return adata_neuron, spatial_df
+
+
+# [MAIN] numpy array, neuron embeddings based on neighboring granules
+def neuron_embedding_one_hot(adata_neuron, granule_adata, k = 10, radius = 10, loc_key = ["global_x", "global_y"], gnl_subtype_key = "granule_subtype_kmeans", padding_value = "Others"):
+    
+    adata_neuron = adata_neuron.copy()
+    granule_adata = granule_adata.copy()
+    
+    # neuron and granule coordinates, granule subtypes
+    neuron_coords = adata_neuron.obs[loc_key].to_numpy()
+    granule_coords = granule_adata.obs[loc_key].to_numpy()
+    granule_subtypes = granule_adata.obs[gnl_subtype_key].astype(str).to_numpy()
+    
+    # include padding category
+    unique_subtypes = np.unique(granule_subtypes).tolist()
+    if padding_value not in unique_subtypes:
+        unique_subtypes.append(padding_value)
+    
+    encoder = OneHotEncoder(categories = [unique_subtypes], sparse = False, handle_unknown = "ignore")
+    encoder.fit(np.array(unique_subtypes).reshape(-1, 1))
+    S = len(unique_subtypes)
+    
+    # k-d tree
+    tree = make_tree(d1 = granule_coords[:, 0], d2 = granule_coords[:, 1])
+    distances, indices = tree.query(neuron_coords, k = k, distance_upper_bound = radius)
+    
+    # initialize output
+    n_neurons = neuron_coords.shape[0]
+    embeddings = np.zeros((n_neurons, k, S), dtype = float)
+
+    for i in range(n_neurons):
+        for k in range(k):
+            idx = indices[i, k]
+            dist = distances[i, k]
+            if idx == granule_coords.shape[0] or np.isinf(dist):
+                subtype = padding_value
+            else:
+                subtype = granule_subtypes[idx]
+            onehot = encoder.transform([[subtype]])[0]
+            embeddings[i, k, :] = onehot
+
+    return embeddings, encoder.categories_[0]
+
+
+# [MAIN] numpy array, neuron embeddings based on neighboring granules
+def neuron_embedding_spatial_weight(adata_neuron, granule_adata, radius = 10, sigma = 10, loc_key = ["global_x", "global_y"], gnl_subtype_key = "granule_subtype_kmeans", padding_value = "Others"):
+    
+    adata_neuron = adata_neuron.copy()
+    granule_adata = granule_adata.copy()
+    
+    # neuron and granule coordinates, granule subtypes
+    neuron_coords = adata_neuron.obs[loc_key].to_numpy()
+    granule_coords = granule_adata.obs[loc_key].to_numpy()
+    granule_subtypes = granule_adata.obs[gnl_subtype_key].astype(str).to_numpy()
+    
+    # include padding category
+    unique_subtypes = np.unique(granule_subtypes).tolist()
+    if padding_value not in unique_subtypes:
+        unique_subtypes.append(padding_value)
+    
+    encoder = OneHotEncoder(categories = [unique_subtypes], sparse = False, handle_unknown = "ignore")
+    encoder.fit(np.array(unique_subtypes).reshape(-1, 1))
+    S = len(unique_subtypes)
+    
+    # k-d tree
+    tree = make_tree(d1 = granule_coords[:, 0], d2 = granule_coords[:, 1])
+    all_neighbors = tree.query_ball_point(neuron_coords, r = radius)
+    
+    # initialize output
+    n_neurons = neuron_coords.shape[0]
+    embeddings = np.zeros((n_neurons, S), dtype = float)
+
+    for i, neighbor_indices in enumerate(all_neighbors):
+        if not neighbor_indices:
+            # no neighbors, assign to padding subtype
+            embeddings[i] = encoder.transform([[padding_value]])[0]
+            continue
+
+        # get neighbor subtypes and distances
+        neighbor_coords = granule_coords[neighbor_indices]
+        dists = np.linalg.norm(neuron_coords[i] - neighbor_coords, axis = 1)
+        weights = np.exp(- dists / sigma)
+
+        # encode subtypes to one-hot and weight them
+        subtypes = granule_subtypes[neighbor_indices]
+        onehots = encoder.transform(subtypes.reshape(-1, 1))
+        weighted_sum = (weights[:, np.newaxis] * onehots).sum(axis = 0)
+
+        # normalize to make it a composition vector
+        embeddings[i] = weighted_sum / weights.sum()
+
+    return embeddings, encoder.categories_[0]
