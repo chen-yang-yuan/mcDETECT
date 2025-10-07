@@ -11,7 +11,7 @@ from shapely.geometry import Point
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import OneHotEncoder
 
-from utils import *
+from .utils import *
 
 
 class mcDETECT:
