@@ -100,26 +100,26 @@ def weighted_spearmanr(A, B, weights):
     return weighted_spearman_corr
 
 
-def assign_palette_to_adata(adata, obs_key = "granule_expr_cluster_hierarchical", cmap_name = "tab10"):
+def assign_palette_to_adata(adata, obs_key = "granule_expr_cluster_hierarchical", self_defined = False, cmap_name = "tab10"):
     
     adata = adata.copy()
     
-    # ensure the column is categorical
     if not pd.api.types.is_categorical_dtype(adata.obs[obs_key]):
         adata.obs[obs_key] = adata.obs[obs_key].astype("category")
-
-    # extract categories and number of levels
+    
     categories = adata.obs[obs_key].cat.categories
     n_categories = len(categories)
-
-    # choose or extend the colormap
-    base_colors = plt.get_cmap(cmap_name).colors
-    if n_categories > len(base_colors):
-        color_palette = sns.color_palette(cmap_name, n_categories)
+    
+    if self_defined:
+        cmap = plt.colormaps[cmap_name]
+        color_palette = [cmap(i) for i in range(n_categories)]
     else:
-        color_palette = base_colors[:n_categories]
-
-    # convert to hex and assign
+        base_colors = plt.get_cmap(cmap_name).colors
+        if n_categories > len(base_colors):
+            color_palette = sns.color_palette(cmap_name, n_categories)
+        else:
+            color_palette = base_colors[:n_categories]
+    
     adata.uns[f"{obs_key}_colors"] = [mcolors.to_hex(c) for c in color_palette]
     
     return adata
