@@ -1,5 +1,47 @@
+# =========================
+# OS / Editor junk
+# =========================
 .DS_Store
+Thumbs.db
 .Rhistory
-Makefile
-tutorial/toy_data
-tutorial/__pycache__
+.Rproj.user/
+*.swp
+*.swo
+
+# =========================
+# Python artifacts
+# =========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+*.log
+
+# =========================
+# Build / Distribution
+# =========================
+build/
+dist/
+pip-wheel-metadata/
+
+# =========================
+# Jupyter notebook outputs
+# =========================
+.ipynb_checkpoints/
+# tutorial/tutorial_files/
+tutorial/__pycache__/
+tutorial/toy_data/
+
+# =========================
+# VSCode / IDE
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# Other project-specific
+# =========================
+# Ignore the Makefile only if it's auto-generated; if it's version-controlled (as in your case), remove this line
+# Makefile
