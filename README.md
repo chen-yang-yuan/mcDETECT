@@ -4,7 +4,7 @@
 
 #### Chenyang Yuan, Krupa Patel, Hongshun Shi, Hsiao-Lin V. Wang, Feng Wang, Ronghua Li, Yangping Li, Victor G. Corces, Hailing Shi, Sulagna Das, Jindan Yu, Peng Jin, Bing Yao* and Jian Hu*
 
-mcDETECT is a machine learning framework to systematically identify and profile distal RNA granules using *in situ* spatial transcriptomics (iST) data. Given an input list of granule markers, mcDETECT first employs density-based clustering to pinpoint the extrasomatic mRNA aggregates for each gene. It then iteratively merges aggregates from different markers that have high spatial overlap. Multiple filtering steps ensure these aggregates fall outside neuronal somata and do not contain negative controls, and the retained aggregates are considered individual granules. Finally, mcDETECT assigns surrounding mRNA molecules to each granule to reconstruct their transcriptome profile.
+It begins by examining the subcellular distribution of mRNAs in an iST sample. Each mRNA molecule is treated as a distinct point with its own 3D spatial coordinates considering the thickness of the sample. Unlike many cell-type marker genes, which are typically found within the nucleus or soma, compartmentalized mRNAs often form small aggregates outside the soma. mcDETECT uses a density-based clustering approach to identify these extrasomatic aggregates. This involves calculating the Euclidean distance between mRNA points and defining the neighborhood of each point within a specified search radius. Points are then categorized as core points, border points, or noise points based on their reachability from neighboring points. mcDETECT recognizes each connected bundle of core and border points as a mRNA aggregate. To minimize false positives, it excludes aggregates that substantially overlap with somata, which are estimated by dilating the nuclear masks derived from DAPI staining. mcDETECT then repeats this process for multiple granule markers, merging aggregates from different markers that exhibit high spatial overlap. After aggregating across all markers, an additional filtering step removes aggregates containing mRNAs from negative control genes, which are known to be enriched exclusively in nuclei and somata. The remaining aggregates are considered individual RNA granules. mcDETECT then computes the minimum enclosing sphere for each aggregate to connect neighboring mRNA molecules from all measured genes and summarizes their counts, thereby defining the spatial transcriptome profile of individual RNA granules.
 
 ![mcDETECT workflow](docs/workflow.jpg)<br>
 
@@ -75,6 +75,6 @@ Source code: [mcDETECT_package](mcDETECT_package).<br>
 
 We are continuing adding new features. Bug reports or feature requests are welcome.<br>
 
-Last update: 08/11/2025, version 2.0.0.
+Last update: 10/07/2025, version 2.0.2.
 
 ## Citation
