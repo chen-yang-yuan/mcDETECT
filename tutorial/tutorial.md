@@ -32,7 +32,7 @@ mcDETECT.__version__
 
 
 
-    '1.0.12'
+    '2.0.2'
 
 
 
@@ -53,7 +53,8 @@ import torch
 from collections import defaultdict
 from sklearn.cluster import KMeans
 
-from mcDETECT import mcDETECT, closest
+from mcDETECT.utils import *
+from mcDETECT.model import *
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -84,14 +85,6 @@ transcripts = transcripts.rename(columns = {"feature_name": "target", "x_locatio
 print(transcripts.head().to_string())
 ```
 
-                  cell_id  overlaps_nucleus target     global_x     global_y   global_z
-    163006771  fgdhmaei-1                 0   A1cf  5994.734375  2021.468750  15.125000
-    163006772  UNASSIGNED                 0    A2m  5763.109375  2043.625000  15.781250
-    163006773  UNASSIGNED                 0    A2m  5951.984375  2085.984375  16.578125
-    163006774  hieeideh-1                 1   Aatf  5757.593750  2163.453125  17.281250
-    163006775  fghnlpdi-1                 1   Aatf  5969.406250  2149.406250  17.625000
-
-
 * Synaptic markers: user-defined list
 
 
@@ -107,9 +100,6 @@ nc_genes = pd.read_csv('toy_data/negative_controls.csv')
 nc_genes = list(nc_genes['Gene'])
 print(nc_genes[:10])
 ```
-
-    ['Neat1', 'Robo3', 'Sec1', 'Syne4', 'Xist', 'Thpo', 'Spaca6', 'Trmt13', 'Fbxl12', 'Cenpa']
-
 
 ### 4. Parameter settings
 
@@ -146,36 +136,12 @@ Synapse detection is implemented in the `detect()` function:
 synapses = mc.detect()
 ```
 
-    1 out of 12 genes processed!
-    2 out of 12 genes processed!
-    3 out of 12 genes processed!
-    4 out of 12 genes processed!
-    5 out of 12 genes processed!
-    6 out of 12 genes processed!
-    7 out of 12 genes processed!
-    8 out of 12 genes processed!
-    9 out of 12 genes processed!
-    10 out of 12 genes processed!
-    11 out of 12 genes processed!
-    12 out of 12 genes processed!
-    Merging spheres...
-    Negative control filtering...
-
-
 The output is a dataframe of synapse metadata:
 
 
 ```python
 print(synapses.head().to_string())
 ```
-
-          sphere_x     sphere_y   sphere_z  layer_z  sphere_r  size  comp  in_nucleus    gene
-    0  5861.525313  2021.429797  15.259961       15  1.115372   8.0   3.0           0  Snap25
-    1  5823.012341  2477.027071  18.744452       18  1.400544  13.0   5.0           0  Snap25
-    2  5805.578936  2419.213116  18.711572       18  1.355859   9.0   3.0           0  Snap25
-    3  5831.996698  2545.542771  18.262820       18  1.168398   7.0   2.0           0  Snap25
-    4  5754.971387  2574.015607  19.978902       19  1.301102   7.0   2.0           0  Snap25
-
 
 * `sphere_x`, `sphere_y`, `sphere_z`: 3D spatial coordinates of each identified synapse
 * `layer_z`: the nearest z-layer of each identified synapse, only applicable in iST datasets with discrete z-coordinates, e.g., MERSCOPE and CosMx
@@ -197,18 +163,6 @@ highly_variable_genes = list(highly_variable_genes.iloc[:, 0])
 spots = mc.spot_expression(grid_len = 50, genes = highly_variable_genes)
 ```
 
-    0 out of 1000 genes profiled!
-    100 out of 1000 genes profiled!
-    200 out of 1000 genes profiled!
-    300 out of 1000 genes profiled!
-    400 out of 1000 genes profiled!
-    500 out of 1000 genes profiled!
-    600 out of 1000 genes profiled!
-    700 out of 1000 genes profiled!
-    800 out of 1000 genes profiled!
-    900 out of 1000 genes profiled!
-
-
 * `grid_len`: numeric, side length of square grids over the tissue region, default is 50 $\mu m$
 
 The output is an anndata object representing the spot-level gene expression data:
@@ -217,15 +171,6 @@ The output is an anndata object representing the spot-level gene expression data
 ```python
 spots
 ```
-
-
-
-
-    AnnData object with n_obs × n_vars = 400 × 1000
-        obs: 'spot_id', 'global_x', 'global_y'
-        var: 'genes'
-
-
 
 Next, we apply a spatial clustering approach, `SpaGCN`, on this anndata object for spatial domain detection. For more details check its [GitHub page](https://github.com/jianhuupenn/SpaGCN/).
 
@@ -288,12 +233,6 @@ plt.savefig("tutorial_files/spatial_domain.png", dpi = 120)
 plt.show()
 ```
 
-
-    
-![png](tutorial_files/tutorial_29_0.png)
-    
-
-
 We can replace the spatial domain labels with meaningful brain region labels, i.e., isocortex layers:
 
 
@@ -341,12 +280,6 @@ plt.savefig("tutorial_files/synapses.png", dpi = 120)
 plt.show()
 ```
 
-
-    
-![png](tutorial_files/tutorial_35_0.png)
-    
-
-
 ### 7. Synapse transcriptome profiling
 
 Synapse transcriptome profiling is implemented in the `profile()` function. The 
@@ -363,15 +296,6 @@ The output is an anndata object representing the spatial transcriptome profile o
 syn_adata
 ```
 
-
-
-
-    AnnData object with n_obs × n_vars = 1494 × 5006
-        obs: 'global_x', 'global_y', 'global_z', 'layer_z', 'sphere_r', 'size', 'comp', 'in_nucleus', 'gene', 'brain_area', 'synapse_id'
-        var: 'genes'
-
-
-
 ### 8. Synapse subtyping
 
 We can classify the identified synapses into dinstinct subtypes, e.g., pre-synapses and post-synapses, based on their transcriptome profile. Here we use a list of pre- and post-synaptic markers for synapse subtyping:
@@ -384,15 +308,6 @@ ref_genes = [i for i in ref_genes if i in syn_adata.var_names]
 syn_adata_subset = syn_adata[:, ref_genes].copy()
 syn_adata_subset
 ```
-
-
-
-
-    AnnData object with n_obs × n_vars = 1494 × 20
-        obs: 'global_x', 'global_y', 'global_z', 'layer_z', 'sphere_r', 'size', 'comp', 'in_nucleus', 'gene', 'brain_area', 'synapse_id'
-        var: 'genes'
-
-
 
 K-Means clustering on the synapses based on the enrichment of these markers:
 
@@ -458,12 +373,6 @@ plt.savefig('tutorial_files/synapse_subtyping.png', dpi = 120)
 plt.show()
 ```
 
-
-    
-![png](tutorial_files/tutorial_45_0.png)
-    
-
-
 Assign each cluster as representing pre- or post-synapses:
 
 
@@ -485,9 +394,6 @@ for i in pre_post_dict.keys():
 print(pre_lst, post_lst, neutral_lst)
 ```
 
-    ['1', '2', '3', '4', '5', '6', '7', '8'] ['0', '9'] []
-
-
 Spatial distribution of the identified pre- and post-synapses:
 
 
@@ -500,9 +406,3 @@ ax.set_aspect('equal', 'box')
 plt.savefig("tutorial_files/synapses_pre_post.png", dpi = 120)
 plt.show()
 ```
-
-
-    
-![png](tutorial_files/tutorial_49_0.png)
-    
-
