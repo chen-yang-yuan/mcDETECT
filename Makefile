@@ -15,7 +15,7 @@ $(TUTORIAL_MD): $(TUTORIAL_IPYNB)
 	python3 -m jupyter nbconvert --to markdown $(TUTORIAL_IPYNB) --output-dir=$(TUTORIAL_DIR)
 
 push:
-	git add $(TUTORIAL_IPYNB) $(TUTORIAL_MD) $(TUTORIAL_FILE)
+	git add $(TUTORIAL_IPYNB) $(TUTORIAL_MD)
 	@if git diff --cached --quiet; then \
 		echo "No changes to commit"; \
 	else \

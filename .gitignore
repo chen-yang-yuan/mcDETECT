@@ -30,7 +30,7 @@ pip-wheel-metadata/
 # Jupyter notebook outputs
 # =========================
 .ipynb_checkpoints/
-# tutorial/tutorial_files/
+tutorial/tutorial_files/
 tutorial/__pycache__/
 tutorial/toy_data/
 
