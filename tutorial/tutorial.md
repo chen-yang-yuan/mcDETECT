@@ -114,7 +114,7 @@ print(nc_genes[:10])
 
 ### 4. Parameter settings
 
-Instantiate an object `mc` from `mcDETECT`. Here, we fix `minspl` at 3 due to the fact that individual RNA granules contain low copy numbers ([Tarannum, Renesa, et al.](https://www.biorxiv.org/content/10.1101/2024.07.13.603387v4)):
+Instantiate an object `mc` from `mcDETECT`:
 
 
 ```python
@@ -137,6 +137,8 @@ Hyperparameters in `mcDETECT`:
 * `s`: numeric, scaling factor for merging overlapped spheres, default is 1
 * `nc_top`: integer, number of top negative control genes retained for filtering, default is 20
 * `nc_thr`: numeric, threshold for negative control filtering, default is 0.1
+
+Note that we fix `minspl` at 3 due to the fact that individual RNA granules contain low copy numbers ([Tarannum, Renesa, et al.](https://www.biorxiv.org/content/10.1101/2024.07.13.603387v4)).
 
 ### 5. RNA granule detection
 
