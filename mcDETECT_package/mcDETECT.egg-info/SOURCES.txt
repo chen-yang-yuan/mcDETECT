@@ -1,0 +1,11 @@
+LICENSE
+README.md
+setup.py
+mcDETECT/__init__.py
+mcDETECT/model.py
+mcDETECT/utils.py
+mcDETECT.egg-info/PKG-INFO
+mcDETECT.egg-info/SOURCES.txt
+mcDETECT.egg-info/dependency_links.txt
+mcDETECT.egg-info/requires.txt
+mcDETECT.egg-info/top_level.txt
