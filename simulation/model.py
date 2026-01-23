@@ -301,7 +301,9 @@ class model:
 
     def remove_overlaps(self, set_a: pd.DataFrame, set_b: pd.DataFrame):
         """
-        Same logic as your optimized version, but kept as-is.
+        Remove overlapping spheres between two sets based on distance criteria.
+        Parameter p controls the threshold for merging: when two spheres overlap and
+        dist < p * l * (radius_a + radius_b), they are merged.
         """
         set_a = set_a.copy()
         set_b = set_b.copy()
