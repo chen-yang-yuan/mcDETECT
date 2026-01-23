@@ -1,9 +1,7 @@
 import cv2
 import numpy as np
 import pandas as pd
-from closest import closest
-
-
+import os
 
 
 class simulation: # for simulating one point process only, CSR and clustering
@@ -16,39 +14,42 @@ class simulation: # for simulating one point process only, CSR and clustering
         self.total = int(shape[0] * shape[1] * density)                 # integer, total number of transcripts
         self.layer_num = layer_num                                      # integer, number of layers
         self.layer_gap = layer_gap                                      # numeric, distance between adjacent layers
-        # self.z_list = [i * layer_gap for i in list(range(layer_num))]   # list, feasible z-axis values
         self.z_range = (layer_num - 1) * layer_gap                      # numeric, maximum of z-axis values 
         self.simulate_z = simulate_z                                    # boolean, whether to simulate 3D points
         self.write_path = write_path                                    # string, path to save output
         self.seed = seed                                                # integer, random seed
+        
+        # Ensure output directory exists
+        if write_path and not os.path.exists(write_path):
+            os.makedirs(write_path, exist_ok=True)
     
     
     def simulate_CSR(self, write_csv = False):
         np.random.seed(self.seed)
         x_coord = np.random.uniform(0, self.shape[0], self.total)
         y_coord = np.random.uniform(0, self.shape[1], self.total)
-        if self.simulate_z: # simulate directly from the z_list
-            # z_coord = np.random.choice(self.z_list, self.total, replace = True)
+        if self.simulate_z:
             z_coord = np.random.uniform(0, self.z_range, self.total)
         else:
             z_coord = np.zeros(self.total)
         points = pd.DataFrame({'id': list(range(self.total)), 'target': [self.name] * self.total, 'global_x': x_coord, 'global_y': y_coord, 'global_z': z_coord, 'in_nucleus': [0] * self.total})
         if write_csv:
-            points.to_csv(self.write_path + 'simulation_CSR_{}_density_{:.4f}.csv'.format(self.name, self.density), index = 0)
+            points.to_csv(os.path.join(self.write_path, 'simulation_CSR_{}_density_{:.4f}.csv'.format(self.name, self.density)), index = 0)
         return points
     
     
     def simulate_cluster(self, num_clusters, beta, mean_dist, write_csv = False):
         
-        'num_clusters: integer, number of clusters/parent nodes'
-        'beta: tuple, two paramters in the beta distriution for simulating in-nucleus ratio'
-        'mean_dist: numeric, mean distance between parent nodes and offsprings'
+        """
+        num_clusters: integer, number of clusters/parent nodes
+        beta: tuple, two parameters in the beta distribution for simulating in-nucleus ratio
+        mean_dist: numeric, mean distance between parent nodes and offsprings
+        """
         
         # parent nodes
         np.random.seed(self.seed)
         parent_x = np.random.uniform(0, self.shape[0], num_clusters)
         parent_y = np.random.uniform(0, self.shape[1], num_clusters)
-        # parent_z = np.random.uniform(np.min(self.z_list), np.max(self.z_list), num_clusters)
         parent_z = np.random.uniform(0, self.z_range, num_clusters)
         in_nucleus_ratio = np.random.beta(beta[0], beta[1], num_clusters)
         
@@ -59,9 +60,7 @@ class simulation: # for simulating one point process only, CSR and clustering
         # exponential distance
         d_offspring = np.random.exponential(mean_dist, n)
         
-        # uniform angle
-        # theta = np.random.uniform(0, 2 * np.pi, n)  # azimuthal angle
-        # phi = np.random.uniform(0, np.pi, n)        # polar angle
+        # uniform angle with sine-weighted polar angle for uniform distribution on sphere
         theta = np.random.uniform(0, 2 * np.pi, n)      # azimuthal angle
         u = np.random.uniform(0, 1, n)                  # for sine-weighted polar angle
         phi = np.arccos(1 - 2 * u)                      # sine-weighted polar angle
@@ -83,18 +82,15 @@ class simulation: # for simulating one point process only, CSR and clustering
             offspring_y[i] = parent_y[id[i]] + d_offspring[i] * np.sin(phi[i]) * np.sin(theta[i])
             offspring_z[i] = parent_z[id[i]] + d_offspring[i] * np.cos(phi[i])
         
-        if self.simulate_z: # assign to the closest layer in z_list
-            # offspring_z = [closest(self.z_list, i) for i in list(offspring_z)]
-            pass
-        else:
+        if not self.simulate_z:
             parent_z = np.zeros(num_clusters)
             offspring_z = np.zeros(n)
         
         parents = pd.DataFrame({'target': [self.name] * num_clusters, 'global_x': parent_x, 'global_y': parent_y, 'global_z': parent_z})
         points = pd.DataFrame({'id': id, 'target': [self.name] * n, 'global_x': offspring_x, 'global_y': offspring_y, 'global_z': offspring_z, 'in_nucleus': in_nucleus})
         if write_csv:
-            parents.to_csv(self.write_path + 'simulation_cluster_{}_parents.csv'.format(self.name), index = 0)
-            points.to_csv(self.write_path + 'simulation_cluster_{}_density_{:.4f}.csv'.format(self.name, self.density), index = 0)
+            parents.to_csv(os.path.join(self.write_path, 'simulation_cluster_{}_parents.csv'.format(self.name)), index = 0)
+            points.to_csv(os.path.join(self.write_path, 'simulation_cluster_{}_density_{:.4f}.csv'.format(self.name, self.density)), index = 0)
         return parents, points
     
     
@@ -105,7 +101,7 @@ class simulation: # for simulating one point process only, CSR and clustering
             x = int(points['global_x'][i])
             y = int(points['global_y'][i])
             img = cv2.circle(img, (x, y), radius, color, thickness)
-        cv2.imwrite(self.write_path + 'simulation_{}_density_{:.4f}.png'.format(self.name, self.density), img)
+        cv2.imwrite(os.path.join(self.write_path, 'simulation_{}_density_{:.4f}.png'.format(self.name, self.density)), img)
 
 
 
@@ -120,26 +116,30 @@ class multi_simulation: # for simulating multiple point processes, clustering
         self.total = [int(shape[0] * shape[1] * i) for i in density]                 # list, integer, total number of transcripts
         self.layer_num = layer_num                                                   # integer, number of layers
         self.layer_gap = layer_gap                                                   # numeric, distance between adjacent layers
-        # self.z_list = [i * layer_gap for i in list(range(layer_num))]                # list, feasible z-axis values
         self.z_range = (layer_num - 1) * layer_gap                                   # numeric, maximum of z-axis values
         self.simulate_z = simulate_z                                                 # boolean, whether to simulate 3D points
         self.write_path = write_path                                                 # string, path to save output
         self.seed = seed                                                             # integer, random seed
+        
+        # Ensure output directory exists
+        if write_path and not os.path.exists(write_path):
+            os.makedirs(write_path, exist_ok=True)
     
     
     def simulate_cluster(self, num_clusters, comp_prob, beta, mean_dist, comp_thr = 2, write_csv = False):
         
-        'num_clusters: integer, number of total clusters/parent nodes'
-        'comp_prob: list, probability of number of components in each cluster'
-        'beta: tuple, two paramters in the beta distriution for simulating in-nucleus ratio'
-        'mean_dist: numeric, mean distance between parent nodes and offsprings'
-        'comp_thr: integer, composition threshold to filter the true aggregations'
+        """
+        num_clusters: integer, number of total clusters/parent nodes
+        comp_prob: list, probability of number of components in each cluster
+        beta: tuple, two parameters in the beta distribution for simulating in-nucleus ratio
+        mean_dist: numeric, mean distance between parent nodes and offsprings
+        comp_thr: integer, composition threshold to filter the true aggregations
+        """
         
         # parent nodes
         np.random.seed(self.seed)
         parent_x = np.random.uniform(0, self.shape[0], num_clusters)
         parent_y = np.random.uniform(0, self.shape[1], num_clusters)
-        # parent_z = np.random.uniform(np.min(self.z_list), np.max(self.z_list), num_clusters)
         parent_z = np.random.uniform(0, self.z_range, num_clusters)
         in_nucleus_ratio = np.random.beta(beta[0], beta[1], num_clusters)
         
@@ -180,9 +180,7 @@ class multi_simulation: # for simulating multiple point processes, clustering
             # exponential distance
             d_offspring = np.random.exponential(mean_dist, n)
             
-            # uniform angle
-            # theta = np.random.uniform(0, 2 * np.pi, n)  # azimuthal angle
-            # phi = np.random.uniform(0, np.pi, n)        # polar angle
+            # uniform angle with sine-weighted polar angle for uniform distribution on sphere
             theta = np.random.uniform(0, 2 * np.pi, n)      # azimuthal angle
             u = np.random.uniform(0, 1, n)                  # for sine-weighted polar angle
             phi = np.arccos(1 - 2 * u)                      # sine-weighted polar angle
@@ -204,10 +202,7 @@ class multi_simulation: # for simulating multiple point processes, clustering
                 offspring_y[i] = parent_y_temp[id[i]] + d_offspring[i] * np.sin(phi[i]) * np.sin(theta[i])
                 offspring_z[i] = parent_z_temp[id[i]] + d_offspring[i] * np.cos(phi[i])
                 
-            if self.simulate_z: # assign to the closest layer in z_list
-                # offspring_z = [closest(self.z_list, i) for i in list(offspring_z)]
-                pass
-            else:
+            if not self.simulate_z:
                 parent_z_temp = np.zeros(num_clusters_temp)
                 offspring_z = np.zeros(n)
                 
@@ -225,14 +220,16 @@ class multi_simulation: # for simulating multiple point processes, clustering
         parents_all = pd.concat(parents_all.values(), axis=0)
         points_all = pd.concat(points_all.values(), axis=0)
         if write_csv:
-            parents.to_csv(self.write_path + 'simulation_cluster_true_parents.csv', index = 0)
-            parents_all.to_csv(self.write_path + 'simulation_cluster_all_parents.csv', index = 0)
-            points_all.to_csv(self.write_path + 'simulation_cluster_all_points.csv', index = 0)
+            parents.to_csv(os.path.join(self.write_path, 'simulation_cluster_true_parents.csv'), index = 0)
+            parents_all.to_csv(os.path.join(self.write_path, 'simulation_cluster_all_parents.csv'), index = 0)
+            points_all.to_csv(os.path.join(self.write_path, 'simulation_cluster_all_points.csv'), index = 0)
         return parents, parents_all, points_all
     
     
     def plot_points(self, points, color, radius = 1, thickness = -1):
-        'color: list, bgr of each gene'
+        """
+        color: list, bgr of each gene
+        """
         img = np.full((self.shape[0], self.shape[1], 3), 255, dtype = np.uint8)
         for j in self.name:
             j_idx = self.name.index(j)
@@ -242,4 +239,4 @@ class multi_simulation: # for simulating multiple point processes, clustering
                 x = int(points_temp['global_x'][i])
                 y = int(points_temp['global_y'][i])
                 img = cv2.circle(img, (x, y), radius, color[j_idx], thickness)
-        cv2.imwrite(self.write_path + 'simulation_all.png'.format(self.name, self.density), img)
+        cv2.imwrite(os.path.join(self.write_path, 'simulation_all.png'), img)
