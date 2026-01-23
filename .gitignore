@@ -4,6 +4,12 @@ data/
 # Output
 output/
 
+# External validation
+validation/
+
+# Simulation output
+simulation/output/
+
 # Python
 __pycache__/
 *.pyc
