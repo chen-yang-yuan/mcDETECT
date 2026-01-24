@@ -303,10 +303,12 @@ class mcDETECT:
         sizes = sphere_low["size"].to_numpy()
         counts = np.array([len(tree.query_ball_point(c, r)) for c, r in zip(centers, radii)])
         nc_ratio = counts / sizes
+        sphere = sphere_low.copy().reset_index(drop=True)
+        sphere["nc_ratio"] = nc_ratio
+        if self.nc_thr is None:
+            return sphere
         pass_idx = (counts == 0) | (nc_ratio < self.nc_thr)
-        sphere = sphere_low[pass_idx].reset_index(drop = True)
-        sphere["nc_ratio"] = nc_ratio[pass_idx]
-        return sphere
+        return sphere.loc[pass_idx].reset_index(drop=True)
     
     
     # [MAIN] dataframe, granule metadata
