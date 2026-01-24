@@ -21,7 +21,7 @@ class mcDETECT:
     
     
     def __init__(self, type, transcripts, gnl_genes, nc_genes = None, eps = 1.5, minspl = None, grid_len = 1.0, cutoff_prob = 0.95, alpha = 5.0, low_bound = 3,
-                 size_thr = 4.0, in_nucleus_thr = (0.5, 0.5), l = 1.0, rho = 0.2, s = 1.0, nc_top = 20, nc_thr = 0.1):
+                 size_thr = 4.0, in_soma_thr = (0.5, 0.5), l = 1.0, rho = 0.2, s = 1.0, nc_top = 20, nc_thr = 0.1):
         
         self.type = type                        # string, iST platform, now support MERSCOPE, Xenium, and CosMx
         self.transcripts = transcripts          # dataframe, transcripts file
@@ -34,7 +34,7 @@ class mcDETECT:
         self.alpha = alpha                      # numeric, scaling factor in parameter selection for min_samples
         self.low_bound = low_bound              # integer, lower bound in parameter selection for min_samples
         self.size_thr = size_thr                # numeric, threshold for maximum radius of an aggregation
-        self.in_nucleus_thr = in_nucleus_thr    # 2-d tuple, threshold for low- and high-in-nucleus ratio
+        self.in_soma_thr = in_soma_thr          # 2-d tuple, threshold for low- and high-in-soma ratio
         self.l = l                              # numeric, scaling factor for seaching overlapped spheres
         self.rho = rho                          # numeric, threshold for determining overlaps
         self.s = s                              # numeric, scaling factor for merging overlapped spheres
@@ -74,7 +74,7 @@ class mcDETECT:
         return optimal_m
     
     
-    # [INTERMEDIATE] dictionary, low- and high-in-nucleus spheres for each granule marker
+    # [INTERMEDIATE] dictionary, low- and high-in-soma spheres for each granule marker
     def dbscan(self, target_names = None, record_cell_id = False, write_csv = False, write_path = "./"):
         
         if self.type != "Xenium":
@@ -145,17 +145,17 @@ class mcDETECT:
                     temp_cell_id_mode = temp_target["cell_id"].mode()[0]
                     cell_id.append(temp_cell_id_mode)
 
-                # ---------- compute sphere features (size, composition, and in-nucleus ratio) ---------- #
-                temp_in_nucleus = np.sum(target["overlaps_nucleus"].values[mask])
+                # ---------- compute sphere features (size, composition, and in-soma ratio) ---------- #
+                temp_in_soma = np.sum(target["overlaps_nucleus"].values[mask])
                 temp_size = coords.shape[0]
                 other_idx = tree.query_ball_point([center[0], center[1], center[2]], np.sqrt(r2))
                 other_trans = others.iloc[other_idx]
-                other_in_nucleus = np.sum(other_trans["overlaps_nucleus"])
+                other_in_soma = np.sum(other_trans["overlaps_nucleus"])
                 other_size = other_trans.shape[0]
                 other_comp = len(other_trans["target"].unique())
                 total_size = temp_size + other_size
                 total_comp = 1 + other_comp
-                local_score = (temp_in_nucleus + other_in_nucleus) / total_size
+                in_soma_score = (temp_in_soma + other_in_soma) / total_size
                 
                 # record sphere features
                 sphere_x.append(center[0])
@@ -165,19 +165,19 @@ class mcDETECT:
                 sphere_r.append(np.sqrt(r2))
                 sphere_size.append(total_size)
                 sphere_comp.append(total_comp)
-                sphere_score.append(local_score)
+                sphere_score.append(in_soma_score)
             
             # basic features for all spheres from each granule marker
             sphere = pd.DataFrame(list(zip(sphere_x, sphere_y, sphere_z, layer_z, sphere_r, sphere_size, sphere_comp, sphere_score, [j] * len(sphere_x))),
-                                      columns = ["sphere_x", "sphere_y", "sphere_z", "layer_z", "sphere_r", "size", "comp", "in_nucleus", "gene"])
-            sphere = sphere.astype({"sphere_x": float, "sphere_y": float, "sphere_z": float, "layer_z": float, "sphere_r": float, "size": float, "comp": float, "in_nucleus": float, "gene": str})
+                                      columns = ["sphere_x", "sphere_y", "sphere_z", "layer_z", "sphere_r", "size", "comp", "in_soma_ratio", "gene"])
+            sphere = sphere.astype({"sphere_x": float, "sphere_y": float, "sphere_z": float, "layer_z": float, "sphere_r": float, "size": float, "comp": float, "in_soma_ratio": float, "gene": str})
             if record_cell_id:
                 sphere["cell_id"] = cell_id
                 sphere = sphere.astype({"cell_id": str})
             
-            # split low- and high-in-nucleus spheres
-            sphere_low = sphere[(sphere["sphere_r"] < self.size_thr) & (sphere["in_nucleus"] < self.in_nucleus_thr[0])]
-            sphere_high = sphere[(sphere["sphere_r"] < self.size_thr) & (sphere["in_nucleus"] > self.in_nucleus_thr[1])]
+            # split low- and high-in-soma spheres
+            sphere_low = sphere[(sphere["sphere_r"] < self.size_thr) & (sphere["in_soma_ratio"] < self.in_soma_thr[0])]
+            sphere_high = sphere[(sphere["sphere_r"] < self.size_thr) & (sphere["in_soma_ratio"] > self.in_soma_thr[1])]
             
             if write_csv:
                 sphere_low.to_csv(write_path + j + " sphere.csv", index=0)
@@ -302,8 +302,10 @@ class mcDETECT:
         radii = sphere_low["sphere_r"].to_numpy()
         sizes = sphere_low["size"].to_numpy()
         counts = np.array([len(tree.query_ball_point(c, r)) for c, r in zip(centers, radii)])
-        pass_idx = (counts == 0) | (counts / sizes < self.nc_thr)
+        nc_ratio = counts / sizes
+        pass_idx = (counts == 0) | (nc_ratio < self.nc_thr)
         sphere = sphere_low[pass_idx].reset_index(drop = True)
+        sphere["nc_ratio"] = nc_ratio[pass_idx]
         return sphere
     
     
@@ -465,7 +467,7 @@ def spot_granule(granule, spot, grid_len = 50, gnl_loc_key = ["sphere_x", "spher
         else:
             granule_radius.append(np.nanmean(gnl_temp["sphere_r"]))
             granule_size.append(np.nanmean(gnl_temp["size"]))
-            granule_score.append(np.nanmean(gnl_temp["in_nucleus"]))
+            granule_score.append(np.nanmean(gnl_temp["in_soma_ratio"]))
     
     spot.obs["indicator"] = indicator
     spot.obs["gnl_count"] = granule_count
