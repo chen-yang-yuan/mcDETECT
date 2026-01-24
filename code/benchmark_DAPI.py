@@ -4,6 +4,7 @@ import numpy as np
 import os
 import pandas as pd
 import tifffile
+from scipy import ndimage
 from matplotlib import pyplot as plt
 
 
@@ -54,14 +55,14 @@ height, width = first_img.shape
 print(f"Image shape: {height} x {width}\n")
 
 # Initialize accumulators for memory-efficient processing
-non_zero_count = np.zeros((height, width), dtype=np.uint8)
+# non_zero_count = np.zeros((height, width), dtype=np.uint8)  # Commented out - only used for "at least N layers" strategies
 mip_accumulator = first_img.copy().astype(np.float32)
 mean_accumulator = first_img.copy().astype(np.float32)
 median_list = [first_img.astype(np.float32)]
 
 # Process first image
-th_first = cv2.adaptiveThreshold(first_img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 49, -1)
-non_zero_count += (th_first > 0).astype(np.uint8)
+# th_first = cv2.adaptiveThreshold(first_img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 49, -1)  # Commented out - only used for "at least N layers" strategies
+# non_zero_count += (th_first > 0).astype(np.uint8)  # Commented out - only used for "at least N layers" strategies
 
 # Process remaining images incrementally (one at a time to save memory)
 print("Processing images incrementally to save memory...")
@@ -72,14 +73,14 @@ for i, fname in enumerate(files[1:], start=1):
     img = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
     
     # Update accumulators
-    th = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 49, -1)
-    non_zero_count += (th > 0).astype(np.uint8)
+    # th = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 49, -1)  # Commented out - only used for "at least N layers" strategies
+    # non_zero_count += (th > 0).astype(np.uint8)  # Commented out - only used for "at least N layers" strategies
     mip_accumulator = np.maximum(mip_accumulator, img.astype(np.float32))
     mean_accumulator += img.astype(np.float32)
     median_list.append(img.astype(np.float32))
     
     # Free memory immediately
-    del img, th
+    del img
     if i % 2 == 0:  # Force garbage collection every 2 images
         gc.collect()
 
@@ -91,36 +92,82 @@ mean_accumulator = mean_accumulator.astype(np.uint8)
 # Compute median (still requires stacking, but only for median)
 print("Computing median projection...")
 median_accumulator = np.median(np.stack(median_list, axis=0), axis=0).astype(np.uint8)
-del median_list, first_img, th_first
+del median_list, first_img
 gc.collect()
 
 print(f"Completed processing all {len(files)} images\n")
 num_layers = len(files)
 
+# DoG filter parameters (from manuscript: σ1=0, σ2=20 pixels)
+DOG_SIGMA = 20.0  # Standard deviation for negative Gaussian (positive Gaussian has σ=0, i.e., original image)
+
+def apply_dog_filter(image, sigma=DOG_SIGMA):
+    """
+    Apply Difference of Gaussians (DoG) filter.
+    From manuscript: positive Gaussian with σ=0 (original image) minus 
+    negative Gaussian with σ=20 pixels.
+    
+    Parameters:
+    -----------
+    image : np.ndarray
+        Input image (uint8)
+    sigma : float
+        Standard deviation for the negative Gaussian (default: 20.0)
+    
+    Returns:
+    --------
+    np.ndarray
+        DoG filtered image (uint8)
+    """
+    # Convert to float for processing
+    img_float = image.astype(np.float32)
+    
+    # Apply Gaussian blur (negative Gaussian with σ=sigma)
+    blurred = ndimage.gaussian_filter(img_float, sigma=sigma)
+    
+    # DoG = original (σ=0) - blurred (σ=sigma)
+    dog_result = img_float - blurred
+    
+    # Normalize back to uint8 range
+    dog_result = cv2.normalize(dog_result, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    
+    return dog_result
+
 # Define stacking strategies (now using pre-computed accumulators)
+# Commented out "at least N layers" strategies - thresholding before merging loses information
+# strategies = {
+#     "At least 1 layer": {
+#         "mask": lambda: (non_zero_count >= 1).astype(np.uint8) * 255,
+#         "description": "Pixel is 1 if non-zero in at least 1 layer"
+#     },
+#     "At least 2 layers": {
+#         "mask": lambda: (non_zero_count >= 2).astype(np.uint8) * 255,
+#         "description": "Pixel is 1 if non-zero in at least 2 layers"
+#     },
+#     "At least 3 layers": {
+#         "mask": lambda: (non_zero_count >= 3).astype(np.uint8) * 255,
+#         "description": "Pixel is 1 if non-zero in at least 3 layers"
+#     },
+#     "At least 4 layers": {
+#         "mask": lambda: (non_zero_count >= 4).astype(np.uint8) * 255,
+#         "description": "Pixel is 1 if non-zero in at least 4 layers"
+#     },
+# }
+
 strategies = {
-    "At least 1 layer": {
-        "mask": lambda: (non_zero_count >= 1).astype(np.uint8) * 255,
-        "description": "Pixel is 1 if non-zero in at least 1 layer"
-    },
-    "At least 2 layers": {
-        "mask": lambda: (non_zero_count >= 2).astype(np.uint8) * 255,
-        "description": "Pixel is 1 if non-zero in at least 2 layers"
-    },
-    "At least 3 layers": {
-        "mask": lambda: (non_zero_count >= 3).astype(np.uint8) * 255,
-        "description": "Pixel is 1 if non-zero in at least 3 layers"
-    },
-    "At least 4 layers": {
-        "mask": lambda: (non_zero_count >= 4).astype(np.uint8) * 255,
-        "description": "Pixel is 1 if non-zero in at least 4 layers"
-    },
     "Maximum Intensity Projection (MIP)": {
         "mask": lambda: cv2.adaptiveThreshold(
             mip_accumulator,
             255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 49, -1
         ),
         "description": "Take max across layers, then threshold"
+    },
+    "Maximum Intensity Projection (MIP) + DoG": {
+        "mask": lambda: cv2.adaptiveThreshold(
+            apply_dog_filter(mip_accumulator),
+            255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 49, -1
+        ),
+        "description": "Take max across layers, apply DoG filter (σ=20), then threshold"
     },
     "Mean Intensity Projection": {
         "mask": lambda: cv2.adaptiveThreshold(
@@ -129,12 +176,26 @@ strategies = {
         ),
         "description": "Take mean across layers, then threshold"
     },
+    "Mean Intensity Projection + DoG": {
+        "mask": lambda: cv2.adaptiveThreshold(
+            apply_dog_filter(mean_accumulator),
+            255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 49, -1
+        ),
+        "description": "Take mean across layers, apply DoG filter (σ=20), then threshold"
+    },
     "Median Intensity Projection": {
         "mask": lambda: cv2.adaptiveThreshold(
             median_accumulator,
             255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 49, -1
         ),
         "description": "Take median across layers, then threshold"
+    },
+    "Median Intensity Projection + DoG": {
+        "mask": lambda: cv2.adaptiveThreshold(
+            apply_dog_filter(median_accumulator),
+            255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 49, -1
+        ),
+        "description": "Take median across layers, apply DoG filter (σ=20), then threshold"
     }
 }
 
@@ -242,7 +303,8 @@ for strategy_name, strategy_info in strategies.items():
     gc.collect()
 
 # Clean up large accumulators
-del non_zero_count, mip_accumulator, mean_accumulator, median_accumulator
+# del non_zero_count, mip_accumulator, mean_accumulator, median_accumulator  # non_zero_count commented out
+del mip_accumulator, mean_accumulator, median_accumulator
 gc.collect()
 
 # Print summary table
