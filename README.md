@@ -1,4 +1,4 @@
-# mcDETECT v2.0.3
+# mcDETECT v2.0.15
 
 ## Uncovering the dark transcriptome in polarized neuronal compartments with mcDETECT
 
@@ -44,13 +44,30 @@ cd mcDETECT/mcDETECT_package
 python3 setup.py install --user
 ```
 
-## Dependencies
+## Dependencies and environment setup
 
-### Python
+### Reproducible Conda environment (recommended)
 
-Python support packages: anndata, miniball, numpy, pandas, rtree, scanpy, scipy, shapely, sklearn.
+To ensure full reproducibility of the mcDETECT package and all analyses in this repository, we provide a Conda environment specification file [env.yaml](code/utils/env.yaml). This file records the Python version and all major dependencies used to develop mcDETECT and generate the results in the paper.
 
-### Versions the software has been tested on
+You can recreate the environment by running:
+
+```bash
+conda env create -f env.yaml
+conda activate mcDETECT
+```
+
+Using this environment is strongly recommended to avoid version conflicts and to ensure full reproducibility. While mcDETECT may work under other environments or with newer package versions, they are not guaranteed to reproduce all results exactly.
+
+### Core Python dependencies
+
+mcDETECT depends on the following major Python packages: anndata, miniball, numpy, pandas, rtree, scanpy, scipy, shapely, scikit-learn.
+
+The exact versions used in our analyses are specified in `env.yaml`.
+
+### Other environments the software has been tested on
+
+In addition to the provided `env.yaml`, mcDETECT has been tested in the following environments:
 
 Environment 1:
 
@@ -75,6 +92,6 @@ Source code: [mcDETECT_package](mcDETECT_package).<br>
 
 We are continuing adding new features. Bug reports or feature requests are welcome.<br>
 
-Last update: 01/23/2026, version 2.0.14.
+Last update: 01/25/2026, version 2.0.15.
 
 ## Citation
