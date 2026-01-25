@@ -27,7 +27,7 @@ This environment contains a tested Python version and all required dependencies 
 
 If you only want to use mcDETECT as a Python package and do not need the full analysis environment, you can install it either from PyPI or directly from the GitHub repository.
 
-**Requirement:** Python ≥ 3.8
+**Requirement:** Python ≥ 3.6
 
 Check your Python version:
 
@@ -73,9 +73,9 @@ mcDETECT relies on a standard scientific Python stack for spatial transcriptomic
 * pandas
 * rtree
 * scanpy
+* scikit-learn
 * scipy
 * shapely
-* scikit-learn
 
 The exact versions used for development and analysis are recorded in [env.yaml](code/utils/env.yaml).
 
