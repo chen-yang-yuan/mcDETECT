@@ -25,7 +25,7 @@ This environment contains a tested Python version and all required dependencies 
 
 ### Alternative: Install mcDETECT as a Python package
 
-If you only want to use mcDETECT as a Python package and do not need the full analysis environment, you can install it via pip.
+If you only want to use mcDETECT as a Python package and do not need the full analysis environment, you can install it either from PyPI or directly from the GitHub repository.
 
 **Requirement:** Python ≥ 3.8
 
