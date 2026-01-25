@@ -15,7 +15,7 @@ set -euo pipefail
 module purge
 module load miniconda3
 eval "$(conda shell.bash hook)"
-conda activate AIVC-env
+conda activate mcDETECT-env
 
 # Always run from repo root so relative paths behave
 cd ~/hulab/projects/mcDETECT/code
