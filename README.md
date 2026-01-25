@@ -10,79 +10,84 @@ mcDETECT is a computational framework designed to study the dark transcriptome r
 
 ## Installation
 
-To install `mcDETECT` package you must make sure that your python version is over 3.6. If you don’t know the version of python you can check it by:
+### Recommended: Use the reproducible Conda environment
+
+To ensure a smooth setup and full reproducibility of the mcDETECT pipeline and analyses, we provide a Conda environment specification file: [env.yaml](code/utils/env.yaml). We recommend creating the environment as follows:
+
+```bash
+git clone https://github.com/chen-yang-yuan/mcDETECT
+cd mcDETECT/code/utils
+conda env create -f env.yaml
+conda activate mcDETECT-env
+```
+
+This environment contains a tested Python version and all required dependencies for running mcDETECT and the associated analysis scripts in this repository.
+
+### Alternative: Install mcDETECT as a Python package
+
+If you only want to use mcDETECT as a Python package and do not need the full analysis environment, you can install it via pip.
+
+**Requirement:** Python ≥ 3.8
+
+Check your Python version:
 
 ```python
 import platform
 platform.python_version()
 ```
 
-Now you can install the current release of `mcDETECT` by the following three ways:
-
-### 1. PyPI
-
-Directly install the package from PyPI:
+#### 1. Install from PyPI
 
 ```bash
-# Note: you need to make sure that the pip is for python3
 pip3 install mcDETECT
+```
 
-# If you do not have permission (when you get a permission denied error), you should run:
+If you encounter permission issues:
+
+```bash
 pip3 install --user mcDETECT
+```
 
-# Or you could run:
+Or:
+
+```bash
 python3 -m pip install mcDETECT
 ```
 
-### 2. GitHub
-
-Download the package from Github and install it locally:
+### 2. Install from GitHub
 
 ```bash
 git clone https://github.com/chen-yang-yuan/mcDETECT
 cd mcDETECT/mcDETECT_package
-python3 setup.py install --user
+python setup.py install --user
 ```
 
-## Dependencies and environment setup
-
-### Reproducible Conda environment (recommended)
-
-To ensure full reproducibility of the mcDETECT package and all analyses in this repository, we provide a Conda environment specification file [env.yaml](code/utils/env.yaml). This file records the Python version and all major dependencies used to develop mcDETECT and generate the results in the paper.
-
-You can recreate the environment by running:
-
-```bash
-conda env create -f env.yaml
-conda activate mcDETECT
-```
-
-Using this environment is strongly recommended to avoid version conflicts and to ensure full reproducibility. While mcDETECT may work under other environments or with newer package versions, they are not guaranteed to reproduce all results exactly.
+## Dependencies
 
 ### Core Python dependencies
 
 mcDETECT depends on the following major Python packages: anndata, miniball, numpy, pandas, rtree, scanpy, scipy, shapely, scikit-learn.
 
-The exact versions used in our analyses are specified in `env.yaml`.
+The exact versions used for development and analysis are recorded in [env.yaml](code/utils/env.yaml).
 
-### Other environments the software has been tested on
+### Tested environments
 
 In addition to the provided `env.yaml`, mcDETECT has been tested in the following environments:
 
-Environment 1:
+Environment 1
 
 * System: macOS Sequoia 15.3.1 (Apple M2 Max)
 * Python: 3.11.4
 * Python packages: anndata = 0.9.1, miniball = 1.2.0, numpy = 1.24.3, pandas = 2.0.2, rtree = 1.2.0, scanpy = 1.10.3, scipy = 1.10.1, shapely = 2.0.1, sklearn = 1.2.2
 
-Environment 2:
+Environment 2
 * System: macOS Sequoia 15.3.1 (Apple M1 Pro)
 * Python: 3.9.12
 * Python packages: anndata = 0.8.0, miniball = 1.2.0, numpy = 1.23.5, pandas = 2.2.3, rtree = 0.9.7, scanpy = 1.10.3, scipy = 1.13.1, shapely = 2.0.1, sklearn = 1.5.2
 
 ## Tutorial
 
-For a step-by-step tutorial on `mcDETECT`, please see [tutorial](tutorial/tutorial.md).<br>
+For a step-by-step tutorial on mcDETECT, please see [tutorial](tutorial/tutorial.md).<br>
 
 Toy datasets used in this tutorial can be downloaded from [Dropbox](https://www.dropbox.com/scl/fo/gxt64ilg55p44iwj1dox3/AO-LRvZUQnJU9twvtaEdpcY?rlkey=bjk5dv5sqnhinblapr12wtzau&st=owdm92gz&dl=0).
 
