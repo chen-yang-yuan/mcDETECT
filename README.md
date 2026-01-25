@@ -54,7 +54,7 @@ Or:
 python3 -m pip install mcDETECT
 ```
 
-### 2. Install from GitHub
+#### 2. Install from GitHub
 
 ```bash
 git clone https://github.com/chen-yang-yuan/mcDETECT
@@ -66,7 +66,16 @@ python setup.py install --user
 
 ### Core Python dependencies
 
-mcDETECT depends on the following major Python packages: anndata, miniball, numpy, pandas, rtree, scanpy, scipy, shapely, scikit-learn.
+mcDETECT relies on a standard scientific Python stack for spatial transcriptomics and image-based analysis, including:
+* anndata
+* miniball
+* numpy
+* pandas
+* rtree
+* scanpy
+* scipy
+* shapely
+* scikit-learn
 
 The exact versions used for development and analysis are recorded in [env.yaml](code/utils/env.yaml).
 
