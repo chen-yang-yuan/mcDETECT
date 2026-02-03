@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=benchmark_rho
+#SBATCH --job-name=benchmark_rho_new
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 #SBATCH --time=240:00:00
@@ -28,6 +28,6 @@ which python
 python --version
 
 # Run your script
-python3 benchmark_rho.py
+python3 benchmark_rho_new.py
 
 echo "Job finished at $(date)"
