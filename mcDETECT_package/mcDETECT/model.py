@@ -350,7 +350,7 @@ class mcDETECT:
             if not target_idx:
                 continue
             local_genes = gene_array[target_idx]    # extract genes for those nearby transcripts
-            counts = Counter(local_genes)           # count how many times each gene occurs
+            counts = Counter(local_genes)      # count how many times each gene occurs
             for g, cnt in counts.items():           # append nonzero entries to sparse matrix lists
                 j = gene_to_idx[g]                  # get gene column index
                 data.append(cnt)                    # nonzero count
