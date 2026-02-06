@@ -113,14 +113,15 @@ for rho in rho_values:
 
     # (2) For each transcript in at least one aggregate, count how many aggregates it belongs to
     #     and (3) number of unique genes per granule.
-    # Use cKDTree.query_ball_point instead of scanning all transcripts per sphere (O(log N + k) vs O(N)).
+    # Use cKDTree.query_ball_point; center z uses layer_z (discrete slice) to match profile() and transcript global_z.
     all_transcript_indices = []
     unique_genes_per_granule = []
 
-    sphere_cols = sphere_all[["sphere_x", "sphere_y", "sphere_z", "sphere_r"]]
+    use_z = "layer_z" if "layer_z" in sphere_all.columns else "sphere_z"
+    sphere_cols = sphere_all[["sphere_x", "sphere_y", use_z, "sphere_r"]]
     for k in range(num_detections):
         row = sphere_cols.iloc[k]
-        center = [float(row["sphere_x"]), float(row["sphere_y"]), float(row["sphere_z"])]
+        center = [float(row["sphere_x"]), float(row["sphere_y"]), float(row[use_z])]
         r = float(row["sphere_r"])
         transcript_indices = np.array(tree_transcripts.query_ball_point(center, r), dtype=np.intp)
         all_transcript_indices.append(transcript_indices)
