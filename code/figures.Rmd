@@ -196,7 +196,7 @@ for (scn in names(scenario_x)) {
 Ambient RNA:
 
 ```{r}
-df <- read.csv(here::here("output/benchmark/benchmark_diffusion_df_new.csv"))
+df <- read.csv(here::here("output/benchmark/benchmark_diffusion_df.csv"))
 
 cor_test <- cor.test(df$baseline_logFC, df$granule_enrichment, method = "spearman")
 cor_test
