@@ -72,7 +72,6 @@ mcDETECT relies on a standard scientific Python stack for spatial transcriptomic
 * numpy
 * pandas
 * rtree
-* scanpy
 * scikit-learn
 * scipy
 * shapely
@@ -87,12 +86,12 @@ Environment 1
 
 * System: macOS Sequoia 15.3.1 (Apple M2 Max)
 * Python: 3.11.4
-* Python packages: anndata = 0.9.1, miniball = 1.2.0, numpy = 1.24.3, pandas = 2.0.2, rtree = 1.2.0, scanpy = 1.10.3, scipy = 1.10.1, shapely = 2.0.1, sklearn = 1.2.2
+* Python packages: anndata = 0.9.1, miniball = 1.2.0, numpy = 1.24.3, pandas = 2.0.2, rtree = 1.2.0, scipy = 1.10.1, shapely = 2.0.1, sklearn = 1.2.2
 
 Environment 2
 * System: macOS Sequoia 15.3.1 (Apple M1 Pro)
 * Python: 3.9.12
-* Python packages: anndata = 0.8.0, miniball = 1.2.0, numpy = 1.23.5, pandas = 2.2.3, rtree = 0.9.7, scanpy = 1.10.3, scipy = 1.13.1, shapely = 2.0.1, sklearn = 1.5.2
+* Python packages: anndata = 0.8.0, miniball = 1.2.0, numpy = 1.23.5, pandas = 2.2.3, rtree = 0.9.7, scipy = 1.13.1, shapely = 2.0.1, sklearn = 1.5.2
 
 ## Tutorial
 
@@ -106,6 +105,6 @@ Source code: [mcDETECT_package](mcDETECT_package).<br>
 
 We are continuing adding new features. Bug reports or feature requests are welcome.<br>
 
-Last update: 01/25/2026, version 2.0.15.
+Last update: 02/08/2026, version 2.1.0.
 
 ## Citation
