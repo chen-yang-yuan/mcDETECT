@@ -1,15 +1,10 @@
 import anndata
-import math
 import miniball
 import numpy as np
 import pandas as pd
-import scanpy as sc
 from collections import Counter
-from rtree import index
 from scipy.sparse import csr_matrix
-from scipy.spatial import cKDTree
 from scipy.stats import poisson
-from shapely.geometry import Point
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import OneHotEncoder
 
@@ -21,7 +16,7 @@ class mcDETECT:
     
     
     def __init__(self, type, transcripts, gnl_genes, nc_genes = None, eps = 1.5, minspl = None, grid_len = 1.0, cutoff_prob = 0.95, alpha = 5.0, low_bound = 3,
-                 size_thr = 4.0, in_soma_thr = (0.5, 0.5), l = 1.0, rho = 0.2, s = 1.0, nc_top = 20, nc_thr = 0.1):
+                 size_thr = 4.0, in_soma_thr = 0.5, l = 1.0, rho = 0.2, s = 1.0, nc_top = 20, nc_thr = 0.1):
         
         self.type = type                        # string, iST platform, now support MERSCOPE, Xenium, and CosMx
         self.transcripts = transcripts          # dataframe, transcripts file
@@ -34,7 +29,7 @@ class mcDETECT:
         self.alpha = alpha                      # numeric, scaling factor in parameter selection for min_samples
         self.low_bound = low_bound              # integer, lower bound in parameter selection for min_samples
         self.size_thr = size_thr                # numeric, threshold for maximum radius of an aggregation
-        self.in_soma_thr = in_soma_thr          # 2-d tuple, threshold for low- and high-in-soma ratio
+        self.in_soma_thr = in_soma_thr          # numeric, threshold for in-soma ratio
         self.l = l                              # numeric, scaling factor for seaching overlapped spheres
         self.rho = rho                          # numeric, threshold for determining overlaps
         self.s = s                              # numeric, scaling factor for merging overlapped spheres
@@ -74,20 +69,20 @@ class mcDETECT:
         return optimal_m
     
     
-    # [INTERMEDIATE] dictionary, low- and high-in-soma spheres for each granule marker
-    def dbscan(self, target_names = None, record_cell_id = False, write_csv = False, write_path = "./"):
+    # [INTERMEDIATE] dictionary, low-in-soma spheres for each granule marker
+    def dbscan(self, target_names = None, record_cell_id = False):
         
         if self.type != "Xenium":
-            z_grid = list(self.transcripts["global_z"].unique())
-            z_grid.sort()
+            self.z_grid = list(self.transcripts["global_z"].unique())
+            self.z_grid.sort()
         
         if target_names is None:
             target_names = self.gnl_genes
         transcripts = self.transcripts[self.transcripts["target"].isin(target_names)]
         
-        num_individual, data_low, data_high = [], {}, {}
+        sphere_dict = {}
         
-        for j in target_names:
+        for j_idx, j in enumerate(target_names):
             
             # split transcripts
             target = transcripts[transcripts["target"] == j]
@@ -135,7 +130,7 @@ class mcDETECT:
 
                 # record closest z-layer
                 if self.type != "Xenium":
-                    closest_z = closest(z_grid, center[2])
+                    closest_z = closest(self.z_grid, center[2])
                 else:
                     closest_z = center[2]
                 
@@ -175,20 +170,14 @@ class mcDETECT:
                 sphere["cell_id"] = cell_id
                 sphere = sphere.astype({"cell_id": str})
             
-            # split low- and high-in-soma spheres
-            sphere_low = sphere[(sphere["sphere_r"] < self.size_thr) & (sphere["in_soma_ratio"] < self.in_soma_thr[0])]
-            sphere_high = sphere[(sphere["sphere_r"] < self.size_thr) & (sphere["in_soma_ratio"] > self.in_soma_thr[1])]
+            # size and in-soma ratio filtering
+            sphere = sphere[(sphere["sphere_r"] < self.size_thr) & (sphere["in_soma_ratio"] < self.in_soma_thr)]
+            sphere = sphere.reset_index(drop = True)
+            sphere_dict[j_idx] = sphere
             
-            if write_csv:
-                sphere_low.to_csv(write_path + j + " sphere.csv", index=0)
-                sphere_high.to_csv(write_path + j + " sphere_high.csv", index=0)
-            
-            num_individual.append(sphere_low.shape[0])
-            data_low[target_names.index(j)] = sphere_low
-            data_high[target_names.index(j)] = sphere_high
-            print("{} out of {} genes processed!".format(target_names.index(j) + 1, len(target_names)))
+            print(f"{j_idx + 1} out of {len(target_names)} genes processed!")
         
-        return np.sum(num_individual), data_low, data_high
+        return sphere_dict
     
     
     # [INNER] merge points from two overlapped spheres, input for remove_overlaps()
@@ -249,6 +238,7 @@ class mcDETECT:
                             set_a.loc[i, "sphere_x"] = new_center[0]
                             set_a.loc[i, "sphere_y"] = new_center[1]
                             set_a.loc[i, "sphere_z"] = new_center[2]
+                            set_a.loc[i, "layer_z"] = closest(self.z_grid, new_center[2])
                             set_a.loc[i, "sphere_r"] = self.s * new_radius
                             set_b.drop(index = j, inplace = True)
         
@@ -269,41 +259,23 @@ class mcDETECT:
     
     
     # [INNER] negative control filtering, input for detect()
-    def nc_filter(self, sphere_low, sphere_high):
+    def nc_filter(self, sphere):
         
-        # negative control gene profiling
-        adata_low = self.profile(sphere_low, self.nc_genes)
-        adata_high = self.profile(sphere_high, self.nc_genes)
-        adata = anndata.concat([adata_low, adata_high], axis = 0, merge = "same")
-        adata.var["genes"] = adata.var.index
-        adata.obs_keys = list(np.arange(adata.shape[0]))
-        adata.obs["type"] = ["low"] * adata_low.shape[0] + ["high"] * adata_high.shape[0]
-        adata.obs["type"] = pd.Categorical(adata.obs["type"], categories = ["low", "high"], ordered = True)
-        
-        # DE analysis of negative control genes
-        sc.tl.rank_genes_groups(adata, "type", method = "t-test")
-        names = adata.uns["rank_genes_groups"]["names"]
-        names = pd.DataFrame(names)
-        logfc = adata.uns["rank_genes_groups"]["logfoldchanges"]
-        logfc = pd.DataFrame(logfc)
-        pvals = adata.uns["rank_genes_groups"]["pvals"]
-        pvals = pd.DataFrame(pvals)
-
-        # select top upregulated negative control genes
-        df = pd.DataFrame({"names": names["high"], "logfc": logfc["high"], "pvals": pvals["high"]})
-        df = df[df["logfc"] >= 0]
-        df = df.sort_values(by = ["pvals"], ascending = True)
-        nc_genes_final = list(df["names"].head(self.nc_top))
+        # top nc_top negative control genes by expression level
+        nc_genes = self.transcripts[self.transcripts["target"].isin(self.nc_genes)]
+        nc_genes = nc_genes.groupby("target").sum()
+        nc_genes = nc_genes.sort_values(by = "counts", ascending = False)
+        nc_genes = list(nc_genes.index[:self.nc_top])
         
         # negative control filtering
-        nc_transcripts_final = self.transcripts[self.transcripts["target"].isin(nc_genes_final)]
+        nc_transcripts_final = self.transcripts[self.transcripts["target"].isin(nc_genes)]
         tree = make_tree(d1 = np.array(nc_transcripts_final["global_x"]), d2 = np.array(nc_transcripts_final["global_y"]), d3 = np.array(nc_transcripts_final["global_z"]))
-        centers = sphere_low[["sphere_x", "sphere_y", "sphere_z"]].to_numpy()
-        radii = sphere_low["sphere_r"].to_numpy()
-        sizes = sphere_low["size"].to_numpy()
+        centers = sphere[["sphere_x", "sphere_y", "layer_z"]].to_numpy()
+        radii = sphere["sphere_r"].to_numpy()
+        sizes = sphere["size"].to_numpy()
         counts = np.array([len(tree.query_ball_point(c, r)) for c, r in zip(centers, radii)])
         nc_ratio = counts / sizes
-        sphere = sphere_low.copy().reset_index(drop=True)
+        sphere = sphere.copy().reset_index(drop=True)
         sphere["nc_ratio"] = nc_ratio
         if self.nc_thr is None:
             return sphere
@@ -314,20 +286,20 @@ class mcDETECT:
     # [MAIN] dataframe, granule metadata
     def detect(self, record_cell_id = False):
 
-        _, data_low, data_high = self.dbscan(record_cell_id = record_cell_id)
+        sphere_dict = self.dbscan(record_cell_id = record_cell_id)
 
         print("Merging spheres...")
-        sphere_low, sphere_high = self.merge_sphere(data_low), self.merge_sphere(data_high)
+        sphere = self.merge_sphere(sphere_dict)
         
         if self.nc_genes is None:
-            return sphere_low
+            return sphere
         else:
             print("Negative control filtering...")
-            return self.nc_filter(sphere_low, sphere_high)
+            return self.nc_filter(sphere)
     
     
     # [MAIN] anndata, granule spatial transcriptome profile
-    def profile(self, granule, genes = None, buffer = 0.0, print_itr = False):
+    def profile(self, granule, genes = None, buffer = 0.0, print_itr = False, print_itr_interval = 5000):
         
         if genes is None:
             genes = list(self.transcripts["target"].unique())
@@ -356,7 +328,7 @@ class mcDETECT:
                 data.append(cnt)                    # nonzero count
                 row_idx.append(i)                   # row index = granule index
                 col_idx.append(j)                   # column index = gene index
-            if print_itr and (i % 5000 == 0):
+            if print_itr and (i % print_itr_interval == 0):
                 print(f"{i} out of {n_gnl} granules profiled!")
         
         # construct sparse spatial transcriptome profile, (n_granules × n_genes)
@@ -372,7 +344,7 @@ class mcDETECT:
     
     
     # [MAIN] anndata, spot-level gene expression
-    def spot_expression(self, grid_len, genes = None):
+    def spot_expression(self, grid_len, genes = None, print_itr = False, print_itr_interval = 100):
         
         if genes is None:
             genes = list(self.transcripts["target"].unique())
@@ -400,8 +372,8 @@ class mcDETECT:
             target_gene = transcripts[transcripts["target"] == k]
             count_gene, _, _ = np.histogram2d(target_gene["global_x"], target_gene["global_y"], bins = [x_bins, y_bins])
             X[k_idx, :] = count_gene.flatten()
-            if k_idx % 100 == 0:
-                print("{} out of {} genes profiled!".format(k_idx, len(genes)))
+            if print_itr and (k_idx % print_itr_interval == 0):
+                print(f"{k_idx} out of {len(genes)} genes profiled!")
         
         # spot id
         spot_id = []
