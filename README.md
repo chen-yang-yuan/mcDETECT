@@ -1,4 +1,4 @@
-# mcDETECT v2.0.15
+# mcDETECT v2.1.0
 
 ## Uncovering the dark transcriptome in polarized neuronal compartments with mcDETECT
 
