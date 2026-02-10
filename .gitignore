@@ -1,5 +1,6 @@
-# Previous code
+# Previous and reference code
 code/old/
+code/ref/
 
 # Data
 data/
@@ -10,7 +11,8 @@ output/
 # External validation
 validation/
 
-# Simulation output
+# Simulation related
+simulation/simulated_data/
 simulation/output/
 
 # Python

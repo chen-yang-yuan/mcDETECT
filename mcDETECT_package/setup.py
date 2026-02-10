@@ -2,9 +2,9 @@ from setuptools import setup, find_packages
 
 setup(
     name = "mcDETECT",
-    version = "2.1.0",
+    version = "2.1.1",
     packages = find_packages(),
-    install_requires = ["anndata", "miniball", "numpy", "pandas", "rtree", "scanpy", "scikit-learn", "scipy", "shapely"],
+    install_requires = ["anndata", "miniball", "numpy", "pandas", "rtree", "scikit-learn", "scipy", "shapely"],
     author = "Chenyang Yuan",
     author_email = "chenyang.yuan@emory.edu",
     description = "Uncovering the dark transcriptome in polarized neuronal compartments with mcDETECT",

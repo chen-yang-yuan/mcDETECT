@@ -1,5 +1,5 @@
 ---
-title: "Validation Figures"
+title: "Main Figures"
 author: "Chenyang Yuan"
 date: "`r Sys.Date()`"
 output: html_document
@@ -60,14 +60,14 @@ ggsave(here::here("validation/justify_simulation/simulation_area.jpeg"), p, widt
 Justify simulation in-soma ratio:
 
 ```{r}
-f <- read_parquet(here::here("output/MERSCOPE_WT_1/all_granules.parquet"))
+df <- read_parquet(here::here("output/MERSCOPE_WT_1/all_granules_local.parquet"))
 
 cutoff <- 0.2
 df_cut <- df[df$in_soma_ratio < cutoff, ]
 print(nrow(df_cut[df_cut$in_soma_ratio == 0, ]) / nrow(df_cut))
 
 p <- ggplot(df, aes(x = in_soma_ratio)) +
-  geom_histogram(binwidth = 0.025, color = "black", linewidth = 0.25, fill = "#6fafd2", alpha = 1) +
+  geom_histogram(binwidth = 0.025, color = "black", linewidth = 0.25, fill = "#1f77b4", alpha = 0.8) +
   geom_vline(xintercept = cutoff, color = "#b71c2c", linetype = "dashed", linewidth = 0.8) +
   # annotate("text", x = cutoff + 0.02, y = Inf, label = cutoff, color = "#b71c2c", hjust = 0, vjust = 1.5, size = 5) +
   scale_x_continuous(breaks = seq(0, 1, by = 0.2)) +
@@ -81,9 +81,77 @@ p <- ggplot(df, aes(x = in_soma_ratio)) +
 ggsave(here::here("validation/justify_simulation/all_granules_in_soma_ratio.jpeg"), p, width = 7, height = 6, dpi = dpi)
 ```
 
+### Reviewer 3, Major Comment 1
+
+Benchmark sphere merging criteria:
+
+```{r}
+df <- read.csv(here::here("output/benchmark/benchmark_rho_MERSCOPE_WT1.csv"))
+
+x_titles <- list(
+  merge          = expression(rho[default]),
+  merge_volume   = expression(rho[volume]),
+  merge_jaccard  = expression(rho[Jaccard]),
+  merge_dice     = expression(rho[Dice])
+)
+
+for (scenario in c("merge", "merge_volume", "merge_jaccard", "merge_dice")) {
+
+  df_plot <- df[df$scenario %in% c("no_ops", scenario), ]
+
+  # numeric columns only
+  num_cols <- names(df_plot)[vapply(df_plot, is.numeric, logical(1))]
+  thr_name <- num_cols[colSums(is.na(df_plot[num_cols])) == 1]
+
+  # skip if no threshold column found
+  if (length(thr_name) != 1) next
+
+  # replace single NA with -1
+  df_plot <- df_plot %>%
+    mutate(across(all_of(thr_name), ~ replace(., is.na(.), -1)))
+  
+  # clean tiny floating-point noise (treat ~0 as 0)
+  eps <- 1e-12
+  df_plot[[thr_name]][abs(df_plot[[thr_name]]) < eps] <- 0
+  
+  # preserve original order as it appears in the data
+  x_vals <- unique(df_plot[[thr_name]])
+  
+  # define labels
+  x_labels <- as.character(x_vals)
+  x_labels[x_vals == -1] <- "No\noperation"
+  if (scenario == "merge"){
+    x_labels[x_vals == 0]  <- "Drop\ncontained"
+  }else{
+    x_labels[x_vals == 1]  <- "Drop\ncontained"
+  }
+  
+  df_plot[[thr_name]] <- factor(
+    df_plot[[thr_name]],
+    levels = x_vals,
+    labels = x_labels,
+    ordered = TRUE
+  )
+
+  # line plot
+  p <- ggplot(df_plot, aes(x = .data[[thr_name]], y = num_detections)) +
+    geom_line(data = df_plot, aes(x = .data[[thr_name]], y = num_detections, group = 1)) +
+    geom_point(shape = 21, size = 4, color = "black", fill = "#1f77b4") +
+    coord_cartesian(ylim = c(755750, NA)) +
+    labs(x = x_titles[[scenario]], y = "Number of Detections") +
+    theme_classic() +
+    theme(axis.title = element_text(size = 15),
+          axis.text.x = element_text(size = 10),
+          axis.text.y = element_text(size = 12))
+
+  ggsave(here::here(paste0("output/benchmark/benchmark_rho_", scenario, "_number_of_detections.jpeg")), p, width = 9, height = 6, dpi = dpi)
+  
+}
+```
+
 ### Reviewer 3, Major Comment 2
 
-Benchmarking in-soma and negative control filtering:
+Benchmark in-soma and negative control filtering:
 
 ```{r}
 df <- read.csv(here::here("output/benchmark/benchmark_filtering_results.csv"))
@@ -140,7 +208,7 @@ for (scn in names(scenario_x)) {
     } else {
       geom_line(data = df_s, aes(x = x_fct, y = n_detections, group = 1))
     }} +
-    geom_point(data = df_s, aes(x = x_fct, y = n_detections), shape = 21, size = 3, color = "black", fill = "#F8766D") +
+    geom_point(data = df_s, aes(x = x_fct, y = n_detections), shape = 21, size = 4, color = "black", fill = "#F8766D") +
     scale_x_discrete(drop = FALSE, labels = x_labels) +
     coord_cartesian(ylim = c(0, 1200000)) +
     labs(title = " ", x = x_title(xvar), y = "Number of detections") +
@@ -159,7 +227,7 @@ for (scn in names(scenario_x)) {
     } else {
       geom_line(data = df_s, aes(x = x_fct, y = mean_sphere_r, group = 1))
     }} +
-    geom_point(data = df_s, aes(x = x_fct, y = mean_sphere_r), shape = 21, size = 3, color = "black", fill = "#00BA38") +
+    geom_point(data = df_s, aes(x = x_fct, y = mean_sphere_r), shape = 21, size = 4, color = "black", fill = "#00BA38") +
     scale_x_discrete(drop = FALSE, labels = x_labels) +
     coord_cartesian(ylim = c(0.75, 1.25)) +
     labs(title = " ", x = x_title(xvar), y = "Mean aggregate radius") +
@@ -178,7 +246,7 @@ for (scn in names(scenario_x)) {
     } else {
       geom_line(data = df_s, aes(x = x_fct, y = mean_in_soma_ratio, group = 1))
     }} +
-    geom_point(data = df_s, aes(x = x_fct, y = mean_in_soma_ratio), shape = 21, size = 3, color = "black", fill = "#619CFF") +
+    geom_point(data = df_s, aes(x = x_fct, y = mean_in_soma_ratio), shape = 21, size = 4, color = "black", fill = "#619CFF") +
     scale_x_discrete(drop = FALSE, labels = x_labels) +
     coord_cartesian(ylim = c(0, 0.5)) +
     labs(title = " ", x = x_title(xvar), y = "Mean in-soma ratio") +
