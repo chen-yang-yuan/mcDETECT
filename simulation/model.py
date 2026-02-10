@@ -344,7 +344,8 @@ class model:
                             if points_union.size == 0:
                                 set_b.drop(index=j, inplace=True)
                                 continue
-                            new_center, new_radius = miniball.get_bounding_ball(points_union, epsilon=self.miniball_epsilon)
+                            new_center, new_r2 = miniball.get_bounding_ball(points_union, epsilon=self.miniball_epsilon)
+                            new_radius = math.sqrt(new_r2)
                             set_a.loc[i, 'sphere_x'] = new_center[0]
                             set_a.loc[i, 'sphere_y'] = new_center[1]
                             set_a.loc[i, 'sphere_z'] = new_center[2]

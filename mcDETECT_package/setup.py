@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name = "mcDETECT",
-    version = "2.1.1",
+    version = "2.1.2",
     packages = find_packages(),
     install_requires = ["anndata", "miniball", "numpy", "pandas", "rtree", "scikit-learn", "scipy", "shapely"],
     author = "Chenyang Yuan",

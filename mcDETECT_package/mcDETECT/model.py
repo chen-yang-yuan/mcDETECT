@@ -20,9 +20,9 @@ class mcDETECT:
     
     
     def __init__(self, type, transcripts, gnl_genes, nc_genes = None, eps = 1.5, minspl = None, grid_len = 1.0, cutoff_prob = 0.95, alpha = 5.0, low_bound = 3,
-                 size_thr = 4.0, in_soma_thr = 0.5, l = 1.0, rho = 0.2, s = 1.0, nc_top = 20, nc_thr = 0.1):
+                 size_thr = 4.0, in_soma_thr = 0.1, l = 1.0, rho = 0.2, s = 1.0, nc_top = 20, nc_thr = 0.1):
         
-        self.type = type                        # string, iST platform, now support MERSCOPE, Xenium, and CosMx
+        self.type = type                        # string, now supports "discrete" (e.g., MERSCOPE, CosMx) and "continuous" (e.g., Xenium)
         self.transcripts = transcripts          # dataframe, transcripts file
         self.gnl_genes = gnl_genes              # list, string, all granule markers
         self.nc_genes = nc_genes                # list, string, all negative controls
@@ -39,7 +39,15 @@ class mcDETECT:
         self.s = s                              # numeric, scaling factor for merging overlapped spheres
         self.nc_top = nc_top                    # integer, number of negative controls retained for filtering
         self.nc_thr = nc_thr                    # numeric, threshold for negative control filtering
-    
+        
+        if self.type == "discrete":
+            self.z_grid = sorted(self.transcripts["global_z"].unique())     # sorted z-grid for discrete platforms
+            self.z_grid_np = np.asarray(self.z_grid, dtype = float)         # numpy array of z-grid for discrete platforms
+        elif self.type == "continuous":
+            self.z_grid = None
+            self.z_grid_np = None
+        else:
+            raise ValueError(f"Invalid platform type: {self.type}")
     
     # [INNER] construct grids, input for tissue_area()
     def construct_grid(self, grid_len = None):
@@ -76,13 +84,11 @@ class mcDETECT:
     # [INTERMEDIATE] dictionary, low-in-soma spheres for each granule marker
     def dbscan(self, target_names = None, record_cell_id = False):
         
-        if self.type != "Xenium":
-            self.z_grid = list(self.transcripts["global_z"].unique())
-            self.z_grid.sort()
-        
         if target_names is None:
             target_names = self.gnl_genes
         transcripts = self.transcripts[self.transcripts["target"].isin(target_names)]
+        
+        z_grid = self.z_grid_np if self.type == "discrete" else None
         
         sphere_dict = {}
         
@@ -131,10 +137,11 @@ class mcDETECT:
                     center = coords_unique.mean(axis=0)
                     dists = np.linalg.norm(coords_unique - center, axis=1)
                     r2 = (dists.max() ** 2)
+                radius = np.sqrt(r2)
 
                 # record closest z-layer
-                if self.type != "Xenium":
-                    closest_z = closest(self.z_grid, center[2])
+                if z_grid is not None:
+                    closest_z = z_grid[np.argmin(np.abs(z_grid - center[2]))]
                 else:
                     closest_z = center[2]
                 
@@ -147,7 +154,7 @@ class mcDETECT:
                 # ---------- compute sphere features (size, composition, and in-soma ratio) ---------- #
                 temp_in_soma = np.sum(target["overlaps_nucleus"].values[mask])
                 temp_size = coords.shape[0]
-                other_idx = tree.query_ball_point([center[0], center[1], center[2]], np.sqrt(r2))
+                other_idx = tree.query_ball_point([center[0], center[1], center[2]], radius)
                 other_trans = others.iloc[other_idx]
                 other_in_soma = np.sum(other_trans["overlaps_nucleus"])
                 other_size = other_trans.shape[0]
@@ -161,7 +168,7 @@ class mcDETECT:
                 sphere_y.append(center[1])
                 sphere_z.append(center[2])
                 layer_z.append(closest_z)
-                sphere_r.append(np.sqrt(r2))
+                sphere_r.append(radius)
                 sphere_size.append(total_size)
                 sphere_comp.append(total_comp)
                 sphere_score.append(in_soma_score)
@@ -184,25 +191,30 @@ class mcDETECT:
         return sphere_dict
     
     
-    # [INNER] merge points from two overlapped spheres, input for remove_overlaps()
-    def find_points(self, sphere_a, sphere_b):
-        transcripts = self.transcripts[self.transcripts["target"].isin(self.gnl_genes)]
-        tree_temp = make_tree(d1 = np.array(transcripts["global_x"]), d2 = np.array(transcripts["global_y"]), d3 = np.array(transcripts["global_z"]))
-        idx_a = tree_temp.query_ball_point([sphere_a["sphere_x"], sphere_a["sphere_y"], sphere_a["sphere_z"]], sphere_a["sphere_r"])
+    # [INNER] merge points from two overlapped spheres, input for _remove_overlaps(), use precomputed tree for all granule marker genes
+    def _find_points(self, sphere_a, sphere_b):
+        
+        transcripts = self._gnl_transcripts
+        tree = self._gnl_tree
+
+        idx_a = tree.query_ball_point([sphere_a["sphere_x"], sphere_a["sphere_y"], sphere_a["sphere_z"]], sphere_a["sphere_r"])
         points_a = transcripts.iloc[idx_a]
         points_a = points_a[points_a["target"] == sphere_a["gene"]]
-        idx_b = tree_temp.query_ball_point([sphere_b["sphere_x"], sphere_b["sphere_y"], sphere_b["sphere_z"]], sphere_b["sphere_r"])
+
+        idx_b = tree.query_ball_point([sphere_b["sphere_x"], sphere_b["sphere_y"], sphere_b["sphere_z"]], sphere_b["sphere_r"])
         points_b = transcripts.iloc[idx_b]
         points_b = points_b[points_b["target"] == sphere_b["gene"]]
-        points = pd.concat([points_a, points_b])
-        points = points[["global_x", "global_y", "global_z"]]
-        return points
+
+        points = pd.concat([points_a, points_b])[["global_x", "global_y", "global_z"]]
+        return points.to_numpy()
     
     
-    def remove_overlaps(self, set_a, set_b):
+    # [INNER] merge spheres from different granule markers, input for detect()
+    def _remove_overlaps(self, set_a, set_b):
         
         set_a = set_a.copy()
         set_b = set_b.copy()
+        z_grid = self.z_grid_np if self.type == "discrete" else None
 
         # find possible overlaps on 2D by r-tree
         idx_b = make_rtree(set_b)
@@ -237,12 +249,16 @@ class mcDETECT:
                             set_a.loc[i] = set_b.loc[j]
                             set_b.drop(index = j, inplace = True)
                         elif not c1 and c2_1:                       # replace A with new sphere and remove B
-                            points_union = np.array(self.find_points(sphere_a, sphere_b))
-                            new_center, new_radius = miniball.get_bounding_ball(points_union, epsilon=1e-8)
+                            points_union = self._find_points(sphere_a, sphere_b)
+                            new_center, new_r2 = miniball.get_bounding_ball(points_union, epsilon=1e-8)
+                            new_radius = np.sqrt(new_r2)
                             set_a.loc[i, "sphere_x"] = new_center[0]
                             set_a.loc[i, "sphere_y"] = new_center[1]
                             set_a.loc[i, "sphere_z"] = new_center[2]
-                            set_a.loc[i, "layer_z"] = closest(self.z_grid, new_center[2])
+                            if z_grid is not None:
+                                set_a.loc[i, "layer_z"] = z_grid[np.argmin(np.abs(z_grid - new_center[2]))]
+                            else:
+                                set_a.loc[i, "layer_z"] = new_center[2]
                             set_a.loc[i, "sphere_r"] = self.s * new_radius
                             set_b.drop(index = j, inplace = True)
         
@@ -256,7 +272,7 @@ class mcDETECT:
         sphere = sphere_dict[0].copy()
         for j in range(1, len(self.gnl_genes)):
             target_sphere = sphere_dict[j]
-            sphere, target_sphere_new = self.remove_overlaps(sphere, target_sphere)
+            sphere, target_sphere_new = self._remove_overlaps(sphere, target_sphere)
             sphere = pd.concat([sphere, target_sphere_new])
             sphere = sphere.reset_index(drop = True)
         return sphere
@@ -266,13 +282,12 @@ class mcDETECT:
     def nc_filter(self, sphere):
         
         # top nc_top negative control genes by expression level
-        nc_genes = self.transcripts[self.transcripts["target"].isin(self.nc_genes)]
-        nc_genes = nc_genes.groupby("target").sum()
-        nc_genes = nc_genes.sort_values(by = "counts", ascending = False)
-        nc_genes = list(nc_genes.index[:self.nc_top])
+        nc_transcripts = self.transcripts[self.transcripts["target"].isin(self.nc_genes)]
+        nc_counts = nc_transcripts["target"].value_counts()
+        nc_genes = list(nc_counts.index[:self.nc_top])
         
         # negative control filtering
-        nc_transcripts_final = self.transcripts[self.transcripts["target"].isin(nc_genes)]
+        nc_transcripts_final = nc_transcripts[nc_transcripts["target"].isin(nc_genes)]
         tree = make_tree(d1 = np.array(nc_transcripts_final["global_x"]), d2 = np.array(nc_transcripts_final["global_y"]), d3 = np.array(nc_transcripts_final["global_z"]))
         centers = sphere[["sphere_x", "sphere_y", "layer_z"]].to_numpy()
         radii = sphere["sphere_r"].to_numpy()
@@ -291,6 +306,10 @@ class mcDETECT:
     def detect(self, record_cell_id = False):
 
         sphere_dict = self.dbscan(record_cell_id = record_cell_id)
+        
+        # precompute tree for all granule marker genes
+        self._gnl_transcripts = self.transcripts[self.transcripts["target"].isin(self.gnl_genes)].reset_index(drop = True)
+        self._gnl_tree = make_tree(d1 = self._gnl_transcripts["global_x"].to_numpy(), d2 = self._gnl_transcripts["global_y"].to_numpy(), d3 = self._gnl_transcripts["global_z"].to_numpy())
 
         print("Merging spheres...")
         sphere = self.merge_sphere(sphere_dict)

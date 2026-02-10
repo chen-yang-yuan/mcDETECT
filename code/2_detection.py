@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import scanpy as sc
+from scipy.spatial import cKDTree
 
 from mcDETECT.utils import *
 from mcDETECT.model import *
@@ -58,7 +59,7 @@ print("Number of syn_genes: ", len(syn_genes))
 # no in-soma filtering (in_soma_thr = 1.01)
 # no negative control filtering (nc_genes = None)
 
-mc = mcDETECT(type = "MERSCOPE", transcripts = transcripts, gnl_genes = syn_genes, nc_genes = None, eps = 1.5,
+mc = mcDETECT(type = "discrete", transcripts = transcripts, gnl_genes = syn_genes, nc_genes = None, eps = 1.5,
               minspl = 3, grid_len = 1, cutoff_prob = 0.95, alpha = 10, low_bound = 3, size_thr = 1e5,
               in_soma_thr = 1.01, l = 1, rho = 0.2, s = 1, nc_top = 20, nc_thr = 0.1)
 
@@ -73,21 +74,20 @@ print("Granules shape: ", granules.shape)
 # in-soma filtering (in_soma_thr = 0.1)
 # negative control filtering (nc_genes = nc_genes)
 
-mc = mcDETECT(type = "MERSCOPE", transcripts = transcripts, gnl_genes = syn_genes, nc_genes = nc_genes, eps = 1.5,
+mc = mcDETECT(type = "discrete", transcripts = transcripts, gnl_genes = syn_genes, nc_genes = nc_genes, eps = 1.5,
               minspl = 3, grid_len = 1, cutoff_prob = 0.95, alpha = 10, low_bound = 3, size_thr = 4.0,
               in_soma_thr = 0.1, l = 1, rho = 0.2, s = 1, nc_top = 20, nc_thr = 0.1)
 granules = mc.detect()
+granules.to_parquet(output_path + "granules.parquet")
 
 # Assign region labels
-labels_df = pd.DataFrame({"global_x": spots.obs["global_x"], "global_y": spots.obs["global_y"], "brain_area": spots.obs["brain_area"]})
-x_grid, y_grid = list(np.unique(labels_df["global_x"])), list(np.unique(labels_df["global_y"]))
-
-granules["brain_area"] = np.nan
-for i in range(granules.shape[0]):
-    closest_x = closest(x_grid, granules["sphere_x"].iloc[i])
-    closest_y = closest(y_grid, granules["sphere_y"].iloc[i])
-    target_label = labels_df[(labels_df["global_x"] == closest_x) & (labels_df["global_y"] == closest_y)]
-    granules["brain_area"].iloc[i] = target_label["brain_area"][0]
+labels_df = pd.DataFrame({"global_x": spots.obs["global_x"].to_numpy(), "global_y": spots.obs["global_y"].to_numpy(), "brain_area": spots.obs["brain_area"].to_numpy(),}).reset_index(drop=True)
+spot_xy = labels_df[["global_x", "global_y"]].to_numpy()
+tree = cKDTree(spot_xy)
+gnl_xy = granules[["sphere_x", "sphere_y"]].to_numpy()
+_, nn_idx = tree.query(gnl_xy, k=1)
+granules = granules.copy()
+granules["brain_area"] = labels_df.loc[nn_idx, "brain_area"].to_numpy()
 
 rotation_matrix = np.array([[np.cos(theta), np.sin(theta)], [-np.sin(theta), np.cos(theta)]])
 coords = granules[coordinate_for_rotation].to_numpy()
