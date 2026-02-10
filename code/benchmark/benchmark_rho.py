@@ -334,7 +334,7 @@ def merge_sphere_by_dice(data_low, gnl_genes, dice_thr, s, tree_transcripts, tra
 
 def mc_kwargs(rho=0.2):
     return dict(
-        type="MERSCOPE",
+        type="discrete",
         transcripts=transcripts,
         gnl_genes=gnl_genes,
         nc_genes=use_nc_genes,
@@ -345,11 +345,11 @@ def mc_kwargs(rho=0.2):
         alpha=10,
         low_bound=3,
         size_thr=4,
-        in_soma_thr=(0.1, 0.9),
+        in_soma_thr=0.1,
         l=1.0,
         rho=rho,
         s=1.0,
-        nc_top=15,
+        nc_top=20,
         nc_thr=0.1,
     )
 
