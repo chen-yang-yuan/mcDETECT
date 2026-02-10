@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: mcDETECT
-Version: 2.1.0
+Version: 2.1.1
 Summary: Uncovering the dark transcriptome in polarized neuronal compartments with mcDETECT
 Home-page: https://github.com/chen-yang-yuan/mcDETECT
 Author: Chenyang Yuan
@@ -16,7 +16,6 @@ Requires-Dist: miniball
 Requires-Dist: numpy
 Requires-Dist: pandas
 Requires-Dist: rtree
-Requires-Dist: scanpy
 Requires-Dist: scikit-learn
 Requires-Dist: scipy
 Requires-Dist: shapely

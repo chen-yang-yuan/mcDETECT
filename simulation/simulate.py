@@ -188,10 +188,15 @@ class multi_simulation: # for simulating multiple point processes, clustering
             # make data
             id = []
             in_nucleus = []
+            # for i in range(num_clusters_temp):
+            #     np.random.seed(self.seed + i)
+            #     id += [i] * n_offspring[i]
+            #     in_nucleus += np.random.binomial(1, in_nucleus_ratio[i], n_offspring[i]).tolist()
+            in_nucleus_ratio_temp = in_nucleus_ratio[valid_index]
             for i in range(num_clusters_temp):
                 np.random.seed(self.seed + i)
                 id += [i] * n_offspring[i]
-                in_nucleus += np.random.binomial(1, in_nucleus_ratio[i], n_offspring[i]).tolist()
+                in_nucleus += np.random.binomial(1, in_nucleus_ratio_temp[i], n_offspring[i]).tolist()
         
             offspring_x = np.zeros(n)
             offspring_y = np.zeros(n)

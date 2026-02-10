@@ -7,9 +7,13 @@ from scipy.sparse import csr_matrix
 from scipy.stats import poisson
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import OneHotEncoder
+from typing import Dict, List, Tuple, Optional
 
 
 from .utils import *
+
+
+# ============================================================ mcDETECT ============================================================ #
 
 
 class mcDETECT:
@@ -390,6 +394,202 @@ class mcDETECT:
         adata.var_names = genes
         adata.var_keys = genes
         return adata
+
+
+# ============================================================ Rule-based automated granule subtyping ============================================================ #
+
+
+class AutomatedGranuleSubtyper:
+    
+    
+    def __init__(self, genes_syn_pre: Optional[List[str]] = None, genes_syn_post: Optional[List[str]] = None, genes_dendrite: Optional[List[str]] = None, genes_axon: Optional[List[str]] = None,
+                 expression_threshold: float = 0.1, enrichment_threshold: float = 0.35, min_total_expression: int = 1):
+        
+        # Default marker gene sets
+        self.genes_syn_pre = genes_syn_pre      # Pre-synaptic marker genes
+        self.genes_syn_post = genes_syn_post    # Post-synaptic marker genes
+        self.genes_dendrite = genes_dendrite    # Dendritic marker genes
+        self.genes_axon = genes_axon            # Axonal marker genes
+        
+        # Thresholds
+        self.expression_threshold = expression_threshold    # Minimum normalized expression to consider a marker "present"
+        self.enrichment_threshold = enrichment_threshold    # Minimum proportion of total marker expression to consider a category "enriched"
+        self.min_total_expression = min_total_expression    # Minimum total marker expression to attempt classification
+        
+        # Create marker dictionary
+        self.marker_genes = {"pre-syn": self.genes_syn_pre,
+                             "post-syn": self.genes_syn_post,
+                             "dendrites": self.genes_dendrite,
+                             "axons": self.genes_axon}
+    
+    
+    # [INNER] compute normalized expression scores for each marker category
+    def _compute_category_scores(self, expression_matrix: np.ndarray, gene_names: List[str]) -> pd.DataFrame:
+        
+        # Initialize scores
+        n_granules = expression_matrix.shape[0]
+        scores = {"pre_score": np.zeros(n_granules),
+                  "post_score": np.zeros(n_granules),
+                  "den_score": np.zeros(n_granules),
+                  "axon_score": np.zeros(n_granules),
+                  "total_score": np.zeros(n_granules)}
+        
+        # Create gene index mapping
+        gene_to_idx = {gene: idx for idx, gene in enumerate(gene_names)}
+        
+        # Compute average expression for each category
+        for category, genes in [("pre", self.genes_syn_pre), ("post", self.genes_syn_post), ("den", self.genes_dendrite), ("axon", self.genes_axon)]:
+            
+            # Find indices of genes present in the data
+            gene_indices = [gene_to_idx[g] for g in genes if g in gene_to_idx]
+            if len(gene_indices) > 0:
+                category_expr = expression_matrix[:, gene_indices].sum(axis=1)  # sum expression across category genes
+                scores[f"{category}_score"] = category_expr / len(genes)        # normalize by number of genes in category
+        
+        # Compute total marker expression
+        scores["total_score"] = scores["pre_score"] + scores["post_score"] +  scores["den_score"] + scores["axon_score"]
+        
+        return pd.DataFrame(scores)
+    
+    
+    # [INNER] classify a single granule based on its category scores
+    def _classify_granule(self, pre_score: float, post_score: float, den_score: float, axon_score: float, total_score: float) -> str:
+        
+        """
+        The classification logic:
+        1. If total expression is too low → "others"
+        2. Compute proportion of expression in each category
+        3. Identify enriched categories (above threshold)
+        4. Assign combined subtype based on enriched categories
+        """
+        
+        # Check minimum expression threshold
+        if total_score < self.min_total_expression:
+            return "others"
+        
+        # Compute proportions
+        pre_prop = pre_score / total_score
+        post_prop = post_score / total_score
+        den_prop = den_score / total_score
+        axon_prop = axon_score / total_score
+        
+        # Identify enriched categories
+        is_pre = pre_prop >= self.enrichment_threshold
+        is_post = post_prop >= self.enrichment_threshold
+        is_den = den_prop >= self.enrichment_threshold
+        is_axon = axon_prop >= self.enrichment_threshold
+        
+        # Classification logic based on enriched categories
+        # Pure types (single enriched category)
+        if is_pre and not is_post and not is_den and not is_axon:
+            return "pre-syn"
+        elif is_post and not is_pre and not is_den and not is_axon:
+            return "post-syn"
+        elif is_den and not is_pre and not is_post and not is_axon:
+            return "dendrites"
+        elif is_axon and not is_pre and not is_post and not is_den:
+            return "axons"
+        
+        # Two-category combinations
+        elif is_pre and is_post and not is_den and not is_axon:
+            return "pre & post"
+        elif is_pre and is_den and not is_post and not is_axon:
+            return "pre & den"
+        elif is_post and is_den and not is_pre and not is_axon:
+            return "post & den"
+        elif is_pre and is_axon and not is_post and not is_den:
+            return "pre & axon"
+        elif is_post and is_axon and not is_pre and not is_den:
+            return "post & axon"
+        elif is_den and is_axon and not is_pre and not is_post:
+            return "den & axon"
+        
+        # Three-category combinations (most common mixed types)
+        elif is_pre and is_post and is_den and not is_axon:
+            return "pre & post & den"
+        elif is_pre and is_post and is_axon and not is_den:
+            return "pre & post & axon"
+        elif is_pre and is_den and is_axon and not is_post:
+            return "pre & den & axon"
+        elif is_post and is_den and is_axon and not is_pre:
+            return "post & den & axon"
+        
+        # Four-category combination
+        elif is_pre and is_post and is_den and is_axon:
+            return "pre & post & den & axon"
+        
+        # No enriched categories or patterns not covered above
+        else:
+            return "others"
+    
+    
+    # [MAIN] assign granule subtypes
+    def predict(self, granule_adata: anndata.AnnData, add_scores: bool = True) -> pd.Series:
+        
+        # Extract expression matrix
+        expr_matrix = granule_adata.X
+        if hasattr(expr_matrix, 'toarray'):
+            expr_matrix = expr_matrix.toarray()
+        
+        # Get gene names
+        gene_names = list(granule_adata.var_names)
+        
+        # Compute category scores
+        scores_df = self._compute_category_scores(expr_matrix, gene_names)
+        
+        # Classify each granule
+        subtypes = []
+        for idx in range(len(scores_df)):
+            subtype = self._classify_granule(scores_df.loc[idx, "pre_score"],
+                                             scores_df.loc[idx, "post_score"],
+                                             scores_df.loc[idx, "den_score"],
+                                             scores_df.loc[idx, "axon_score"],
+                                             scores_df.loc[idx, "total_score"])
+            subtypes.append(subtype)
+        
+        # Add scores to AnnData if requested
+        if add_scores:
+            for col in ["pre_score", "post_score", "den_score", "axon_score", "total_score"]:
+                granule_adata.obs[col] = scores_df[col].values
+        
+        # Return subtypes as categorical series
+        subtypes_series = pd.Series(subtypes, index=granule_adata.obs.index, name="granule_subtype_auto")
+        
+        return subtypes_series
+    
+    
+    # [MAIN] predict and compare with manual annotations
+    def predict_and_compare(self, granule_adata: anndata.AnnData, manual_subtype_column: str = "granule_subtype") -> Tuple[pd.Series, pd.DataFrame]:
+        
+        # Predict subtypes
+        subtypes = self.predict(granule_adata, add_scores=True)
+        
+        # Create comparison if manual annotations exist
+        if manual_subtype_column in granule_adata.obs.columns:
+            manual_subtypes = granule_adata.obs[manual_subtype_column]
+            comparison = pd.crosstab(manual_subtypes, subtypes, rownames=["Manual"], colnames=["Automated"])    # create confusion matrix
+            return subtypes, comparison
+        else:
+            return subtypes, None
+
+
+# [MAIN] convenience function for automated granule subtyping
+def automated_granule_subtyping(granule_adata: anndata.AnnData, expression_threshold: float = 0.1, enrichment_threshold: float = 0.35, min_total_expression: int = 1, custom_markers: Optional[Dict[str, List[str]]] = None) -> pd.Series:
+    
+    # Create subtyper
+    subtyper = AutomatedGranuleSubtyper(genes_syn_pre=custom_markers.get('pre-syn'),
+                                            genes_syn_post=custom_markers.get('post-syn'),
+                                            genes_dendrite=custom_markers.get('dendrites'),
+                                            genes_axon=custom_markers.get('axons'),
+                                            expression_threshold=expression_threshold,
+                                            enrichment_threshold=enrichment_threshold,
+                                            min_total_expression=min_total_expression)
+    
+    # Predict and return
+    return subtyper.predict(granule_adata, add_scores=True)
+
+
+# ============================================================ Granule & neuron spatial analysis ============================================================ #
 
 
 # [MAIN] anndata, spot-level neuron metadata
