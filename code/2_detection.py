@@ -95,7 +95,7 @@ transformed_coords = coords @ rotation_matrix.T
 granules["global_" + coordinate_for_rotation[0].split("_")[1] + "_new"] = transformed_coords[:, 0]
 granules["global_" + coordinate_for_rotation[1].split("_")[1] + "_new"] = transformed_coords[:, 1]
 if flip:
-    granules[coordinate_for_flip + "_new"] = cutoff - granules["global_" + coordinate_for_flip + "_new"]
+    granules[coordinate_for_flip + "_new"] = cutoff - granules[coordinate_for_flip + "_new"]
 
 # Save granules
 granules.to_parquet(output_path + "granules.parquet")
