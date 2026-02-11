@@ -49,6 +49,7 @@ class mcDETECT:
         else:
             raise ValueError(f"Invalid platform type: {self.type}")
     
+    
     # [INNER] construct grids, input for tissue_area()
     def construct_grid(self, grid_len = None):
         if grid_len is None:
@@ -191,6 +192,13 @@ class mcDETECT:
         return sphere_dict
     
     
+    # [INNER] ensure precomputed tree for all granule marker genes
+    def _ensure_gnl_tree(self):
+        if (not hasattr(self, "_gnl_transcripts")) or (not hasattr(self, "_gnl_tree")):
+            self._gnl_transcripts = self.transcripts[self.transcripts["target"].isin(self.gnl_genes)].reset_index(drop=True)
+            self._gnl_tree = make_tree(d1 = self._gnl_transcripts["global_x"].to_numpy(), d2 = self._gnl_transcripts["global_y"].to_numpy(), d3 = self._gnl_transcripts["global_z"].to_numpy())
+    
+    
     # [INNER] merge points from two overlapped spheres, input for _remove_overlaps(), use precomputed tree for all granule marker genes
     def _find_points(self, sphere_a, sphere_b):
         
@@ -269,8 +277,9 @@ class mcDETECT:
     
     # [INNER] merge spheres from different granule markers, input for detect()
     def merge_sphere(self, sphere_dict):
+        self._ensure_gnl_tree()
         sphere = sphere_dict[0].copy()
-        for j in range(1, len(self.gnl_genes)):
+        for j in range(1, len(sphere_dict)):
             target_sphere = sphere_dict[j]
             sphere, target_sphere_new = self._remove_overlaps(sphere, target_sphere)
             sphere = pd.concat([sphere, target_sphere_new])
@@ -306,10 +315,6 @@ class mcDETECT:
     def detect(self, record_cell_id = False):
 
         sphere_dict = self.dbscan(record_cell_id = record_cell_id)
-        
-        # precompute tree for all granule marker genes
-        self._gnl_transcripts = self.transcripts[self.transcripts["target"].isin(self.gnl_genes)].reset_index(drop = True)
-        self._gnl_tree = make_tree(d1 = self._gnl_transcripts["global_x"].to_numpy(), d2 = self._gnl_transcripts["global_y"].to_numpy(), d3 = self._gnl_transcripts["global_z"].to_numpy())
 
         print("Merging spheres...")
         sphere = self.merge_sphere(sphere_dict)
