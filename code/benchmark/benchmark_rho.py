@@ -54,7 +54,7 @@ print(f"Transcripts: {transcripts.shape[0]}, granule markers: {len(gnl_genes)}")
 
 # Spatial index for fast "transcripts in sphere" queries (O(log N + k) per sphere)
 tree_transcripts = make_tree(
-    transcript_coords[:, 0], transcript_coords[:, 1], transcript_coords[:, 2]
+    d1 = transcript_coords[:, 0], d2 = transcript_coords[:, 1], d3 = transcript_coords[:, 2]
 )
 
 
@@ -72,6 +72,8 @@ def sphere_intersection_volume(d, r1, r2):
     Volume of intersection of two spheres with distance d between centers; r1 <= r2.
     Returns 0 if disjoint, volume of smaller sphere if one inside the other, else closed-form cap formula.
     """
+    if d <= 1e-12:
+        return sphere_volume(min(r1, r2))
     if d >= r1 + r2:
         return 0.0
     if d <= r2 - r1:
@@ -99,6 +101,8 @@ def remove_overlaps_by_volume(set_a, set_b, gamma, s, tree_transcripts, transcri
     """
     set_a = set_a.copy()
     set_b = set_b.copy()
+    if set_a.shape[0] == 0 or set_b.shape[0] == 0:
+        return set_a, set_b
     idx_b = make_rtree(set_b)
 
     for i, sphere_a in set_a.iterrows():
@@ -165,14 +169,14 @@ def remove_overlaps_by_volume(set_a, set_b, gamma, s, tree_transcripts, transcri
     return set_a, set_b
 
 
-def merge_sphere_by_intersection(data_low, gnl_genes, gamma, s, tree_transcripts, transcript_coords, gene_per_transcript):
+def merge_sphere_by_intersection(sphere_dict, gnl_genes, gamma, s, tree_transcripts, transcript_coords, gene_per_transcript):
     """
     Merge per-gene spheres using intersection/min_volume criterion (helper only).
-    data_low: dict mapping gene index -> DataFrame of spheres (columns sphere_x, sphere_y, sphere_z, sphere_r, gene, ...).
+    sphere_dict: dict mapping gene index -> DataFrame of spheres (columns sphere_x, sphere_y, sphere_z, sphere_r, gene, ...).
     """
-    sphere = data_low[0].copy()
+    sphere = sphere_dict[0].copy()
     for j in range(1, len(gnl_genes)):
-        set_b = data_low[j]
+        set_b = sphere_dict[j]
         sphere, set_b_new = remove_overlaps_by_volume(
             sphere, set_b, gamma, s, tree_transcripts, transcript_coords, gene_per_transcript, gnl_genes
         )
@@ -213,6 +217,8 @@ def remove_overlaps_by_jaccard(set_a, set_b, jaccard_thr, s, tree_transcripts, t
     """
     set_a = set_a.copy()
     set_b = set_b.copy()
+    if set_a.shape[0] == 0 or set_b.shape[0] == 0:
+        return set_a, set_b
     idx_b = make_rtree(set_b)
 
     for i, sphere_a in set_a.iterrows():
@@ -262,6 +268,8 @@ def remove_overlaps_by_dice(set_a, set_b, dice_thr, s, tree_transcripts, transcr
     """
     set_a = set_a.copy()
     set_b = set_b.copy()
+    if set_a.shape[0] == 0 or set_b.shape[0] == 0:
+        return set_a, set_b
     idx_b = make_rtree(set_b)
 
     for i, sphere_a in set_a.iterrows():
@@ -302,11 +310,11 @@ def remove_overlaps_by_dice(set_a, set_b, dice_thr, s, tree_transcripts, transcr
     return set_a, set_b
 
 
-def merge_sphere_by_jaccard(data_low, gnl_genes, jaccard_thr, s, tree_transcripts, transcript_coords, gene_per_transcript):
+def merge_sphere_by_jaccard(sphere_dict, gnl_genes, jaccard_thr, s, tree_transcripts, transcript_coords, gene_per_transcript):
     """Merge per-gene spheres using Jaccard criterion (helper only)."""
-    sphere = data_low[0].copy()
+    sphere = sphere_dict[0].copy()
     for j in range(1, len(gnl_genes)):
-        set_b = data_low[j]
+        set_b = sphere_dict[j]
         sphere, set_b_new = remove_overlaps_by_jaccard(
             sphere, set_b, jaccard_thr, s, tree_transcripts, transcript_coords, gene_per_transcript, gnl_genes
         )
@@ -315,11 +323,11 @@ def merge_sphere_by_jaccard(data_low, gnl_genes, jaccard_thr, s, tree_transcript
     return sphere
 
 
-def merge_sphere_by_dice(data_low, gnl_genes, dice_thr, s, tree_transcripts, transcript_coords, gene_per_transcript):
+def merge_sphere_by_dice(sphere_dict, gnl_genes, dice_thr, s, tree_transcripts, transcript_coords, gene_per_transcript):
     """Merge per-gene spheres using Dice criterion (helper only)."""
-    sphere = data_low[0].copy()
+    sphere = sphere_dict[0].copy()
     for j in range(1, len(gnl_genes)):
-        set_b = data_low[j]
+        set_b = sphere_dict[j]
         sphere, set_b_new = remove_overlaps_by_dice(
             sphere, set_b, dice_thr, s, tree_transcripts, transcript_coords, gene_per_transcript, gnl_genes
         )
@@ -425,11 +433,11 @@ unique_genes_per_granule_dfs = []
 # Per-gene aggregates (dbscan once; rho not used)
 print("Running dbscan() once...")
 mc_base = mcDETECT(**mc_kwargs())
-_, data_low, data_high = mc_base.dbscan()
+sphere_dict = mc_base.dbscan()
 
 # (1) No operation: concat per-gene spheres only (no drop, no merge)
 print("Benchmarking (1) no_ops...")
-sphere_no_ops = pd.concat([data_low[j] for j in range(len(gnl_genes))], ignore_index=True)
+sphere_no_ops = pd.concat(list(sphere_dict.values()), ignore_index=True)
 n, avg_all, avg_gnl = compute_metrics(sphere_no_ops, "no_ops", np.nan, np.nan, np.nan, np.nan)
 print(f"  no_ops: {n} detections | mean(# agg/transcript) all_genes = {avg_all:.4f}, gnl_only = {avg_gnl:.4f}")
 
@@ -437,10 +445,9 @@ print(f"  no_ops: {n} detections | mean(# agg/transcript) all_genes = {avg_all:.
 print("Benchmarking rho: (2) drop only (rho=0) .. (3) full (rho=1)...")
 for rho in rho_values:
     mc = mcDETECT(**mc_kwargs(rho=float(rho)))
-    sphere_all = mc.merge_sphere(data_low)
+    sphere_all = mc.merge_sphere(sphere_dict)
     if use_nc_genes is not None:
-        sphere_high = mc.merge_sphere(data_high)
-        sphere_all = mc.nc_filter(sphere_all, sphere_high)
+        sphere_all = mc.nc_filter(sphere_all)
     n, avg_all, avg_gnl = compute_metrics(sphere_all, "merge", float(rho), np.nan, np.nan, np.nan)
     gnl_str = f"{avg_gnl:.4f}" if not np.isnan(avg_gnl) else "n/a"
     print(f"  rho = {rho:.1f}: {n} detections | mean(# agg/transcript) all_genes = {avg_all:.4f}, gnl_only = {gnl_str}")
@@ -450,7 +457,7 @@ s_volume = 1.0
 print("Benchmarking gamma: (2) drop only (gamma=1) .. (3) full (gamma=0)...")
 for gamma in gamma_values:
     sphere_all = merge_sphere_by_intersection(
-        data_low, gnl_genes, float(gamma), s_volume,
+        sphere_dict, gnl_genes, float(gamma), s_volume,
         tree_transcripts, transcript_coords, gene_per_transcript,
     )
     n, avg_all, avg_gnl = compute_metrics(sphere_all, "merge_volume", np.nan, float(gamma), np.nan, np.nan)
@@ -461,7 +468,7 @@ for gamma in gamma_values:
 print("Benchmarking jaccard_thr: (2) drop only (jaccard_thr=1) .. (3) full (jaccard_thr=0)...")
 for jaccard_thr in jaccard_thr_values:
     sphere_all = merge_sphere_by_jaccard(
-        data_low, gnl_genes, float(jaccard_thr), s_volume,
+        sphere_dict, gnl_genes, float(jaccard_thr), s_volume,
         tree_transcripts, transcript_coords, gene_per_transcript,
     )
     n, avg_all, avg_gnl = compute_metrics(sphere_all, "merge_jaccard", np.nan, np.nan, float(jaccard_thr), np.nan)
@@ -472,7 +479,7 @@ for jaccard_thr in jaccard_thr_values:
 print("Benchmarking dice_thr: (2) drop only (dice_thr=1) .. (3) full (dice_thr=0)...")
 for dice_thr in dice_thr_values:
     sphere_all = merge_sphere_by_dice(
-        data_low, gnl_genes, float(dice_thr), s_volume,
+        sphere_dict, gnl_genes, float(dice_thr), s_volume,
         tree_transcripts, transcript_coords, gene_per_transcript,
     )
     n, avg_all, avg_gnl = compute_metrics(sphere_all, "merge_dice", np.nan, np.nan, np.nan, float(dice_thr))
