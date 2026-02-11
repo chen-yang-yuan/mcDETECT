@@ -364,53 +364,126 @@ def mc_kwargs(rho=0.2):
 
 def compute_metrics(spheres, scenario, rho_val, gamma_val=np.nan, jaccard_thr_val=np.nan, dice_thr_val=np.nan):
     """
-    For each transcript in >= 1 aggregate: count how many unique aggregates it belongs to; report mean.
-
-    Two denominators:
-      - All genes: any transcript (any gene) that falls in >= 1 sphere.
-      - Granule markers only: restrict to transcripts whose gene is in gnl_genes (ideal mean = 1 if no overlap).
+    For each transcript in >= 1 aggregate:
+      - Count how many unique aggregates it belongs to (all genes, and granule markers only).
+      - Separate within-gene vs cross-gene overlap for granule-marker transcripts.
+      - Summarize fractions in 1, 2, and 3+ aggregates.
     """
     n = spheres.shape[0]
     z_col = "layer_z" if "layer_z" in spheres.columns else "sphere_z"
     cols = spheres[["sphere_x", "sphere_y", z_col, "sphere_r"]]
 
-    all_indices = []
-    n_unique_genes = []
+    all_indices = []          # transcript indices per sphere
+    all_sphere_genes = []     # sphere gene label per membership
+    n_unique_genes = []       # n_unique_genes per granule (for completeness)
+
     for i in range(n):
         r = cols.iloc[i]
         center = [float(r["sphere_x"]), float(r["sphere_y"]), float(r[z_col])]
         rad = float(r["sphere_r"])
         idx = np.array(tree_transcripts.query_ball_point(center, rad), dtype=np.intp)
         all_indices.append(idx)
+
+        sphere_gene = spheres.iloc[i]["gene"]
+        all_sphere_genes.append(np.full(idx.shape[0], sphere_gene, dtype=object))
+
         n_unique_genes.append(len(np.unique(gene_per_transcript[idx])) if len(idx) > 0 else 0)
 
     if all_indices:
-        flat = np.concatenate(all_indices)
-        unique_idx, counts = np.unique(flat, return_counts=True)
+        flat_idx = np.concatenate(all_indices)
+        flat_sphere_gene = np.concatenate(all_sphere_genes)
+
+        # ------- All genes: aggregates per transcript and fractions in 1,2,3+ ------- #
+        unique_idx, counts = np.unique(flat_idx, return_counts=True)
         avg_all = float(np.mean(counts))
-        gnl_mask = np.isin(gene_per_transcript[unique_idx], gnl_genes)
-        avg_gnl = float(np.mean(counts[gnl_mask])) if gnl_mask.any() else np.nan
+
+        frac_agg1_all = float(np.mean(counts == 1))
+        frac_agg2_all = float(np.mean(counts == 2))
+        frac_agg3p_all = float(np.mean(counts >= 3))
+
+        # Granule-marker transcripts only (denominator: transcripts whose own gene is in gnl_genes)
+        gnl_mask_all = np.isin(gene_per_transcript[unique_idx], gnl_genes)
+        if gnl_mask_all.any():
+            counts_gnl = counts[gnl_mask_all]
+            avg_gnl = float(np.mean(counts_gnl))
+            frac_agg1_gnl = float(np.mean(counts_gnl == 1))
+            frac_agg2_gnl = float(np.mean(counts_gnl == 2))
+            frac_agg3p_gnl = float(np.mean(counts_gnl >= 3))
+        else:
+            avg_gnl = np.nan
+            frac_agg1_gnl = frac_agg2_gnl = frac_agg3p_gnl = np.nan
+
         aggregates_per_transcript_distributions.append({"scenario": scenario, "counts": counts.tolist()})
+
+        # ------- Within-gene vs cross-gene overlap (granule-marker transcripts only) ------- #
+        # Restrict memberships to transcripts whose own gene is in gnl_genes
+        flat_t_gene = gene_per_transcript[flat_idx]
+        membership_is_gnl = np.isin(flat_t_gene, gnl_genes)
+        if membership_is_gnl.any():
+            t_idx_gnl = flat_idx[membership_is_gnl]
+            t_gene_gnl = flat_t_gene[membership_is_gnl]
+            sphere_gene_gnl = flat_sphere_gene[membership_is_gnl]
+
+            df_gnl = pd.DataFrame(
+                {
+                    "t_idx": t_idx_gnl,
+                    "t_gene": t_gene_gnl,
+                    "sphere_gene": sphere_gene_gnl,
+                }
+            )
+            grp = df_gnl.groupby("t_idx")
+            n_sphere_genes = grp["sphere_gene"].nunique().to_numpy()
+            avg_n_sphere_genes_gnl = float(np.mean(n_sphere_genes))
+            frac_gnl_only_own = float(np.mean(n_sphere_genes == 1))
+            frac_gnl_cross = float(np.mean(n_sphere_genes > 1))
+        else:
+            avg_n_sphere_genes_gnl = np.nan
+            frac_gnl_only_own = np.nan
+            frac_gnl_cross = np.nan
+
     else:
         avg_all = 0.0
         avg_gnl = np.nan
+        frac_agg1_all = frac_agg2_all = frac_agg3p_all = 0.0
+        frac_agg1_gnl = frac_agg2_gnl = frac_agg3p_gnl = np.nan
+        avg_n_sphere_genes_gnl = np.nan
+        frac_gnl_only_own = np.nan
+        frac_gnl_cross = np.nan
         aggregates_per_transcript_distributions.append({"scenario": scenario, "counts": []})
 
-    num_detections_records.append({
-        "scenario": scenario,
-        "rho": rho_val,
-        "gamma": gamma_val,
-        "jaccard_thr": jaccard_thr_val,
-        "dice_thr": dice_thr_val,
-        "num_detections": n,
-        "avg_aggregates_per_transcript_all_genes": avg_all,
-        "avg_aggregates_per_transcript_gnl_only": avg_gnl,
-    })
+    num_detections_records.append(
+        {
+            "scenario": scenario,
+            "rho": rho_val,
+            "gamma": gamma_val,
+            "jaccard_thr": jaccard_thr_val,
+            "dice_thr": dice_thr_val,
+            "num_detections": n,
+            "avg_aggregates_per_transcript_all_genes": avg_all,
+            "avg_aggregates_per_transcript_gnl_only": avg_gnl,
+            "frac_transcripts_1_agg_all_genes": frac_agg1_all,
+            "frac_transcripts_2_agg_all_genes": frac_agg2_all,
+            "frac_transcripts_3p_agg_all_genes": frac_agg3p_all,
+            "frac_transcripts_1_agg_gnl_only": frac_agg1_gnl,
+            "frac_transcripts_2_agg_gnl_only": frac_agg2_gnl,
+            "frac_transcripts_3p_agg_gnl_only": frac_agg3p_gnl,
+            "avg_n_sphere_genes_gnl_only": avg_n_sphere_genes_gnl,
+            "frac_gnl_transcripts_only_own_gene": frac_gnl_only_own,
+            "frac_gnl_transcripts_with_cross_gene_overlap": frac_gnl_cross,
+        }
+    )
     unique_genes_per_granule_dfs.append(
-        pd.DataFrame({
-            "scenario": scenario, "rho": rho_val, "gamma": gamma_val, "jaccard_thr": jaccard_thr_val, "dice_thr": dice_thr_val,
-            "granule_idx": np.arange(n), "n_unique_genes": n_unique_genes,
-        })
+        pd.DataFrame(
+            {
+                "scenario": scenario,
+                "rho": rho_val,
+                "gamma": gamma_val,
+                "jaccard_thr": jaccard_thr_val,
+                "dice_thr": dice_thr_val,
+                "granule_idx": np.arange(n),
+                "n_unique_genes": n_unique_genes,
+            }
+        )
     )
     return n, avg_all, avg_gnl
 

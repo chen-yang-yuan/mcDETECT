@@ -60,7 +60,7 @@ ggsave(here::here("validation/justify_simulation/simulation_area.jpeg"), p, widt
 Justify simulation in-soma ratio:
 
 ```{r}
-df <- read_parquet(here::here("output/MERSCOPE_WT_1/all_granules_local.parquet"))
+df <- read_parquet(here::here("output/MERSCOPE_WT_1/all_granules.parquet"))
 
 cutoff <- 0.2
 df_cut <- df[df$in_soma_ratio < cutoff, ]
@@ -133,18 +133,32 @@ for (scenario in c("merge", "merge_volume", "merge_jaccard", "merge_dice")) {
     ordered = TRUE
   )
 
-  # line plot
-  p <- ggplot(df_plot, aes(x = .data[[thr_name]], y = num_detections)) +
+  # line plots
+  p1 <- ggplot(df_plot, aes(x = .data[[thr_name]], y = num_detections)) +
     geom_line(data = df_plot, aes(x = .data[[thr_name]], y = num_detections, group = 1)) +
-    geom_point(shape = 21, size = 4, color = "black", fill = "#1f77b4") +
-    coord_cartesian(ylim = c(755750, NA)) +
+    geom_point(shape = 21, size = 4, color = "black", fill = "#619CFF") +
+    coord_cartesian(ylim = c(600000, NA)) +
     labs(x = x_titles[[scenario]], y = "Number of Detections") +
     theme_classic() +
     theme(axis.title = element_text(size = 15),
           axis.text.x = element_text(size = 10),
           axis.text.y = element_text(size = 12))
 
-  ggsave(here::here(paste0("output/benchmark/benchmark_rho_", scenario, "_number_of_detections.jpeg")), p, width = 9, height = 6, dpi = dpi)
+  ggsave(here::here(paste0("output/benchmark/benchmark_rho_number_of_detections_", scenario, ".jpeg")), p1, width = 9, height = 6, dpi = dpi)
+  
+  # line plot
+  p2 <- ggplot(df_plot, aes(x = .data[[thr_name]], y = avg_aggregates_per_transcript_gnl_only)) +
+    geom_line(data = df_plot, aes(x = .data[[thr_name]], y = avg_aggregates_per_transcript_gnl_only, group = 1)) +
+    geom_point(shape = 21, size = 4, color = "black", fill = "#00BA38") +
+    geom_hline(yintercept = 1, color = "#b71c2c", linetype = "dashed", linewidth = 0.8) +
+    coord_cartesian(ylim = c(0.98, NA)) +
+    labs(x = x_titles[[scenario]], y = "Number of Detections") +
+    theme_classic() +
+    theme(axis.title = element_text(size = 15),
+          axis.text.x = element_text(size = 10),
+          axis.text.y = element_text(size = 12))
+
+  ggsave(here::here(paste0("output/benchmark/benchmark_rho_aggregates_per_transcript_", scenario, ".jpeg")), p2, width = 9, height = 6, dpi = dpi)
   
 }
 ```
