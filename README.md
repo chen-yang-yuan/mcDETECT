@@ -1,4 +1,7 @@
-# mcDETECT v2.1.3 <img src="docs/logo.jpg" width="150" align="right" />
+mcDETECT v2.1.3 <img src="docs/logo.jpg" width="150" align="right" />
+====================================================================================================
+
+<br>
 
 ## Uncovering the dark transcriptome in polarized neuronal compartments with mcDETECT
 
