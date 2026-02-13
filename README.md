@@ -1,6 +1,6 @@
-# mcDETECT v2.1.3
+# mcDETECT v2.1.3 <img src="docs/logo.jpg" width="150" align="right" />
 
-## Uncovering the dark transcriptome in polarized neuronal compartments with mcDETECT <img src="docs/logo.jpg" width="120" align="right" />
+## Uncovering the dark transcriptome in polarized neuronal compartments with mcDETECT
 
 #### Chenyang Yuan, Krupa Patel, Hongshun Shi, Hsiao-Lin Wang, Feng Wang, Ronghua Li, Yangping Li, Victor Corces, Hailing Shi, Sulagna Das, Jindan Yu, Peng Jin, Bing Yao* and Jian Hu*
 
