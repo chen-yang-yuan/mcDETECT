@@ -2,6 +2,7 @@ LICENSE
 README.md
 setup.py
 mcDETECT/__init__.py
+mcDETECT/downstream.py
 mcDETECT/model.py
 mcDETECT/utils.py
 mcDETECT.egg-info/PKG-INFO
