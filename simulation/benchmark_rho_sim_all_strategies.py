@@ -80,6 +80,16 @@ def metric_main(tree, ground_truth_indices, sphere):
             matched_index.append(tuple(idx))
     return calculate_metric(ground_truth_indices, matched_index)
 
+# Helper function for computing average detections per ground truth
+def compute_avg_detections_per_GT(sphere_all, parents_all):
+    detections_per_GT = []
+    for _, gt_row in parents_all.iterrows():
+        gx, gy, gz = gt_row["global_x"], gt_row["global_y"], gt_row["global_z"]
+        count = sum(1 for _, sphere in sphere_all.iterrows()
+                    if np.sqrt((gx - sphere["sphere_x"])**2 + (gy - sphere["sphere_y"])**2 + (gz - sphere["sphere_z"])**2) <= sphere["sphere_r"])
+        detections_per_GT.append(count)
+    return np.mean(detections_per_GT) if detections_per_GT else 0.0
+
 # ==================== Helper functions for volume-, Jaccard-, and Dice-based merge ==================== #
 
 """
@@ -310,15 +320,6 @@ benchmark_seeds = np.arange(1, 11)
 l_distance = l_vol = l_jaccard = l_dice = 2.5
 s_volume = 1.0
 
-def compute_avg_detections_per_GT(sphere_all, parents_all):
-    detections_per_GT = []
-    for _, gt_row in parents_all.iterrows():
-        gx, gy, gz = gt_row["global_x"], gt_row["global_y"], gt_row["global_z"]
-        count = sum(1 for _, sphere in sphere_all.iterrows()
-                    if np.sqrt((gx - sphere["sphere_x"])**2 + (gy - sphere["sphere_y"])**2 + (gz - sphere["sphere_z"])**2) <= sphere["sphere_r"])
-        detections_per_GT.append(count)
-    return np.mean(detections_per_GT) if detections_per_GT else 0.0
-
 results_rows = []
 
 print("Benchmarking merge strategies (distance, volume, Jaccard, Dice)...")
@@ -375,8 +376,10 @@ for benchmark_seed in benchmark_seeds:
         print(f"p={param} in seed {benchmark_seed} done!")
 
 results_df = pd.DataFrame(results_rows)
+results_df.to_csv(os.path.join(output_dir, "p_benchmark_multi_marker_3D_all_strategies_detailed.csv"), index=False)
+print(f"Saved: {os.path.join(output_dir, 'p_benchmark_multi_marker_3D_all_strategies_detailed.csv')}")
+
 mean_df = results_df.groupby(["strategy", "param"]).agg({"num_detections": "mean", "avg_detections_per_GT": "mean", "precision": "mean", "recall": "mean", "accuracy": "mean", "f1": "mean"}).reset_index()
 mean_df.columns = ["strategy", "param", "num_detections_mean", "avg_detections_per_GT_mean", "precision_mean", "recall_mean", "accuracy_mean", "f1_mean"]
-
-mean_df.to_csv(os.path.join(output_dir, "p_benchmark_multi_marker_3D_all_strategies.csv"), index=False)
-print(f"Saved: {os.path.join(output_dir, 'p_benchmark_multi_marker_3D_all_strategies.csv')}")
+mean_df.to_csv(os.path.join(output_dir, "p_benchmark_multi_marker_3D_all_strategies_mean.csv"), index=False)
+print(f"Saved: {os.path.join(output_dir, 'p_benchmark_multi_marker_3D_all_strategies_mean.csv')}")
