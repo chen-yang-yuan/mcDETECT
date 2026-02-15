@@ -15,6 +15,9 @@ validation/
 simulation/simulated_data/
 simulation/output/
 
+# Figure related
+**/figures.*
+
 # Python
 __pycache__/
 *.pyc
