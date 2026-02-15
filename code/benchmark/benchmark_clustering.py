@@ -25,7 +25,7 @@ warnings.filterwarnings("ignore")
 dataset = "MERSCOPE_WT_1"
 data_path = f"../../data/{dataset}/"
 output_path = f"../../output/{dataset}/"
-benchmark_path = "../../output/benchmark/"
+benchmark_path = "../../output/benchmark/benchmark_clustering/"
 os.makedirs(benchmark_path, exist_ok=True)
 
 # ==================== Read data ==================== #

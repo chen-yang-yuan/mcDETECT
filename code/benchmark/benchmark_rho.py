@@ -30,7 +30,7 @@ from mcDETECT.model import mcDETECT
 
 dataset = "MERSCOPE_WT_1"
 data_path = f"../../data/{dataset}/"
-output_path = f"../../output/benchmark/"
+output_path = f"../../output/benchmark/benchmark_rho/"
 os.makedirs(output_path, exist_ok=True)
 
 transcripts = pd.read_parquet(data_path + "processed_data/transcripts.parquet")
