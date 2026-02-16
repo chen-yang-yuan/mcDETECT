@@ -102,7 +102,7 @@ for k in k_range:
     km = MiniBatchKMeans(n_clusters=k, random_state=random_state, batch_size=batch_size)
     labels = km.fit_predict(X)
     inertia = km.inertia_
-    # sil = silhouette_score(X, labels)
+    sil = silhouette_score(X, labels)
 
     # Cluster stability: re-run with different random seeds, compute mean pairwise ARI across runs
     label_list = [labels]
@@ -115,12 +115,10 @@ for k in k_range:
             ari_values.append(adjusted_rand_score(label_list[i], label_list[j]))
     ari_stability_mean = np.mean(ari_values) if ari_values else np.nan
 
-    results.append({
-        "n_clusters": k,
-        "inertia": inertia,
-        # "silhouette_score": sil,
-        "ari_stability_mean": ari_stability_mean,
-    })
+    results.append({"n_clusters": k,
+                    "inertia": inertia,
+                    "silhouette_score": sil,
+                    "ari_stability_mean": ari_stability_mean})
 
 metrics_df = pd.DataFrame(results)
 
@@ -129,20 +127,20 @@ out_csv = os.path.join(benchmark_path, "benchmark_clustering_results.csv")
 metrics_df.to_csv(out_csv, index=False)
 print(f"Saved: {out_csv}")
 
-# # Visualize Silhouette score distribution for target k
-# target_k = 15
-# km_target = MiniBatchKMeans(n_clusters=target_k, random_state=random_state, batch_size=batch_size)
-# labels_target = km_target.fit_predict(X)
-# sil_samples = silhouette_samples(X, labels_target)
+# Visualize Silhouette score distribution for target k
+target_k = 15
+km_target = MiniBatchKMeans(n_clusters=target_k, random_state=random_state, batch_size=batch_size)
+labels_target = km_target.fit_predict(X)
+sil_samples = silhouette_samples(X, labels_target)
 
-# fig, ax = plt.subplots(figsize=(8, 6))
-# ax.hist(sil_samples, bins=50, color="#9b59b6", alpha=0.7, edgecolor="black")
-# ax.axvline(np.mean(sil_samples), color="red", linestyle="--", label=f"Mean = {np.mean(sil_samples):.4f}")
-# ax.set_xlabel("Silhouette coefficient")
-# ax.set_ylabel("Count")
-# ax.set_title(f"Silhouette distribution (k = {target_k})")
-# ax.legend()
-# ax.grid(True, alpha=0.3)
-# plt.tight_layout()
-# plt.savefig(benchmark_path + f"benchmark_clustering_silhouette_distribution_k_{target_k}.jpeg", dpi=500, bbox_inches="tight")
-# plt.close()
+fig, ax = plt.subplots(figsize=(8, 6))
+ax.hist(sil_samples, bins=50, color="#9b59b6", alpha=0.7, edgecolor="black")
+ax.axvline(np.mean(sil_samples), color="red", linestyle="--", label=f"Mean = {np.mean(sil_samples):.4f}")
+ax.set_xlabel("Silhouette coefficient")
+ax.set_ylabel("Count")
+ax.set_title(f"Silhouette distribution (k = {target_k})")
+ax.legend()
+ax.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig(benchmark_path + f"benchmark_clustering_silhouette_distribution_k_{target_k}.jpeg", dpi=500, bbox_inches="tight")
+plt.close()

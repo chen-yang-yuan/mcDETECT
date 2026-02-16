@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import scanpy as sc
+from scipy.sparse import csr_matrix
 from scipy.spatial import cKDTree
 
 from mcDETECT.utils import *
@@ -100,3 +101,16 @@ if flip:
 # Save granules
 granules.to_parquet(output_path + "granules.parquet")
 print("Granules shape: ", granules.shape)
+
+# ==================== Granule expression profiling ==================== #
+
+granule_adata = mc.profile(granules, genes = genes)
+granule_adata.layers["counts"] = csr_matrix(granule_adata.X.copy())
+
+sc.pp.normalize_total(granule_adata, target_sum=1e4)
+sc.pp.log1p(granule_adata)
+sc.tl.pca(granule_adata, n_comps=10, svd_solver="auto")
+sc.tl.tsne(granule_adata, n_pcs=10)
+
+granule_adata.write_h5ad(output_path + "granule_adata_tsne.h5ad")
+print("Granule adata: ", granule_adata)
