@@ -11,6 +11,9 @@ output/
 # External validation
 validation/
 
+# Other analysis
+other_analysis/
+
 # Simulation related
 simulation/simulated_data/
 simulation/output/

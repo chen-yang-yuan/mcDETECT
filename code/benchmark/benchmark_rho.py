@@ -42,11 +42,12 @@ if "overlaps_nucleus" not in transcripts.columns and "overlaps_nucleus_5_dilatio
 transcript_coords = transcripts[["global_x", "global_y", "global_z"]].values
 gene_per_transcript = transcripts["target"].values
 
-gnl_genes = [
-    "Camk2a", "Cplx2", "Slc17a7", "Ddn", "Syp", "Map1a", "Shank1", "Syn1",
-    "Gria1", "Gria2", "Cyfip2", "Vamp2", "Bsn", "Slc32a1", "Nfasc", "Syt1",
-    "Tubb3", "Nav1", "Shank3", "Mapt",
-]
+# gnl_genes = [
+#     "Camk2a", "Cplx2", "Slc17a7", "Ddn", "Syp", "Map1a", "Shank1", "Syn1",
+#     "Gria1", "Gria2", "Cyfip2", "Vamp2", "Bsn", "Slc32a1", "Nfasc", "Syt1",
+#     "Tubb3", "Nav1", "Shank3", "Mapt",
+# ]
+gnl_genes = ["Camk2a", "Cplx2", "Slc17a7"]
 nc_genes = list(pd.read_csv(data_path + "processed_data/negative_controls.csv")["Gene"])
 use_nc_genes = None  # set to nc_genes to enable negative-control filtering
 
@@ -564,11 +565,13 @@ for dice_thr in dice_thr_values:
 # Save and summary
 # ---------------------------------------------------------------------------
 
-summary_path = os.path.join(output_path, "benchmark_rho_MERSCOPE_WT1.csv")
+# summary_path = os.path.join(output_path, "benchmark_rho_MERSCOPE_WT1.csv")
+summary_path = os.path.join(output_path, "benchmark_rho_MERSCOPE_WT1_three_genes.csv")
 pd.DataFrame(num_detections_records).to_csv(summary_path, index=False)
 print(f"Saved: {summary_path}")
 
-granule_path = os.path.join(output_path, "benchmark_rho_unique_genes_per_granule_MERSCOPE_WT1.csv")
+# granule_path = os.path.join(output_path, "benchmark_rho_unique_genes_per_granule_MERSCOPE_WT1.csv")
+granule_path = os.path.join(output_path, "benchmark_rho_unique_genes_per_granule_MERSCOPE_WT1_three_genes.csv")
 pd.concat(unique_genes_per_granule_dfs, ignore_index=True).to_csv(granule_path, index=False)
 print(f"Saved: {granule_path}")
 
