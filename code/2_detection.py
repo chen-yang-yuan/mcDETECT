@@ -55,24 +55,22 @@ spots = sc.read_h5ad(data_path + "processed_data/spots.h5ad")
 syn_genes = ["Camk2a", "Cplx2", "Slc17a7", "Ddn", "Syp", "Map1a", "Shank1", "Syn1", "Gria1", "Gria2", "Cyfip2", "Vamp2", "Bsn", "Slc32a1", "Nfasc", "Syt1", "Tubb3", "Nav1", "Shank3", "Mapt"]
 print("Number of syn_genes: ", len(syn_genes))
 
-# ==================== Rough detection (run once for MERSCOPE_WT_1) ==================== #
+# ==================== Rough detection (run once) ==================== #
 # no size filtering (size_thr = 1e5)
 # no in-soma filtering (in_soma_thr = 1.01)
 # no negative control filtering (nc_genes = None)
-
-if dataset == "MERSCOPE_WT_1":
     
-    print("Running rough detection for MERSCOPE_WT_1...")
-    
-    mc = mcDETECT(type = "discrete", transcripts = transcripts, gnl_genes = syn_genes, nc_genes = None, eps = 1.5,
-                minspl = 3, grid_len = 1, cutoff_prob = 0.95, alpha = 10, low_bound = 3, size_thr = 1e5,
-                in_soma_thr = 1.01, l = 1, rho = 0.2, s = 1, nc_top = 20, nc_thr = 0.1)
+print(f"Running rough detection for {dataset}...")
 
-    sphere_dict = mc.dbscan(record_cell_id = True)
-    print("Merging spheres...")
-    granules = mc.merge_sphere(sphere_dict)
-    granules.to_parquet(output_path + "all_granules.parquet")
-    print("Granules shape: ", granules.shape)
+mc = mcDETECT(type = "discrete", transcripts = transcripts, gnl_genes = syn_genes, nc_genes = None, eps = 1.5,
+            minspl = 3, grid_len = 1, cutoff_prob = 0.95, alpha = 10, low_bound = 3, size_thr = 1e5,
+            in_soma_thr = 1.01, l = 1, rho = 0.2, s = 1, nc_top = 20, nc_thr = 0.1)
+
+sphere_dict = mc.dbscan(record_cell_id = True)
+print("Merging spheres...")
+granules = mc.merge_sphere(sphere_dict)
+granules.to_parquet(output_path + "all_granules.parquet")
+print("Granules shape: ", granules.shape)
 
 # ==================== Fine detection ==================== #
 # size filtering (size_thr = 4.0)
