@@ -31,7 +31,9 @@ from mcDETECT.model import mcDETECT
 dataset = "MERSCOPE_WT_1"
 data_path = f"../../data/{dataset}/"
 output_path = f"../../output/benchmark/benchmark_rho/"
+representative_dir = os.path.join(output_path, f"{dataset}_representative_data")
 os.makedirs(output_path, exist_ok=True)
+os.makedirs(representative_dir, exist_ok=True)
 
 transcripts = pd.read_parquet(data_path + "processed_data/transcripts.parquet")
 if "target" not in transcripts.columns and "gene" in transcripts.columns:
@@ -42,12 +44,11 @@ if "overlaps_nucleus" not in transcripts.columns and "overlaps_nucleus_5_dilatio
 transcript_coords = transcripts[["global_x", "global_y", "global_z"]].values
 gene_per_transcript = transcripts["target"].values
 
-# gnl_genes = [
-#     "Camk2a", "Cplx2", "Slc17a7", "Ddn", "Syp", "Map1a", "Shank1", "Syn1",
-#     "Gria1", "Gria2", "Cyfip2", "Vamp2", "Bsn", "Slc32a1", "Nfasc", "Syt1",
-#     "Tubb3", "Nav1", "Shank3", "Mapt",
-# ]
-gnl_genes = ["Camk2a", "Cplx2", "Slc17a7"]
+gnl_genes = [
+    "Camk2a", "Cplx2", "Slc17a7", "Ddn", "Syp", "Map1a", "Shank1", "Syn1",
+    "Gria1", "Gria2", "Cyfip2", "Vamp2", "Bsn", "Slc32a1", "Nfasc", "Syt1",
+    "Tubb3", "Nav1", "Shank3", "Mapt",
+]
 nc_genes = list(pd.read_csv(data_path + "processed_data/negative_controls.csv")["Gene"])
 use_nc_genes = None  # set to nc_genes to enable negative-control filtering
 
@@ -390,6 +391,11 @@ def compute_metrics(spheres, scenario, rho_val, gamma_val=np.nan, jaccard_thr_va
 
         n_unique_genes.append(len(np.unique(gene_per_transcript[idx])) if len(idx) > 0 else 0)
 
+    # Per-aggregate summaries (for all scenarios)
+    n_transcripts_per_aggregate = [len(idx) for idx in all_indices]
+    mean_unique_genes_per_aggregate = float(np.mean(n_unique_genes)) if n_unique_genes else np.nan
+    mean_transcripts_per_aggregate = float(np.mean(n_transcripts_per_aggregate)) if n_transcripts_per_aggregate else np.nan
+
     if all_indices:
         flat_idx = np.concatenate(all_indices)
         flat_sphere_gene = np.concatenate(all_sphere_genes)
@@ -450,6 +456,8 @@ def compute_metrics(spheres, scenario, rho_val, gamma_val=np.nan, jaccard_thr_va
         avg_n_sphere_genes_gnl = np.nan
         frac_gnl_only_own = np.nan
         frac_gnl_cross = np.nan
+        mean_unique_genes_per_aggregate = np.nan
+        mean_transcripts_per_aggregate = np.nan
         aggregates_per_transcript_distributions.append({"scenario": scenario, "counts": []})
 
     num_detections_records.append(
@@ -471,6 +479,8 @@ def compute_metrics(spheres, scenario, rho_val, gamma_val=np.nan, jaccard_thr_va
             "avg_n_sphere_genes_gnl_only": avg_n_sphere_genes_gnl,
             "frac_gnl_transcripts_only_own_gene": frac_gnl_only_own,
             "frac_gnl_transcripts_with_cross_gene_overlap": frac_gnl_cross,
+            "mean_unique_genes_per_aggregate": mean_unique_genes_per_aggregate,
+            "mean_transcripts_per_aggregate": mean_transcripts_per_aggregate,
         }
     )
     unique_genes_per_granule_dfs.append(
@@ -516,6 +526,8 @@ n, avg_all, avg_gnl = compute_metrics(sphere_no_ops, "no_ops", np.nan, np.nan, n
 print(f"  no_ops: {n} detections | mean(# agg/transcript) all_genes = {avg_all:.4f}, gnl_only = {avg_gnl:.4f}")
 
 # rho: (2) rho=0 = drop only, ... (3) rho=1 = full (merge even touching)
+# Representative granules (default strategy only): save parquet for rho in {0, 0.2, 0.5, 0.8}
+rho_representative = (0.0, 0.2, 0.5, 0.8)
 print("Benchmarking rho: (2) drop only (rho=0) .. (3) full (rho=1)...")
 for rho in rho_values:
     mc = mcDETECT(**mc_kwargs(rho=float(rho)))
@@ -525,6 +537,10 @@ for rho in rho_values:
     n, avg_all, avg_gnl = compute_metrics(sphere_all, "merge", float(rho), np.nan, np.nan, np.nan)
     gnl_str = f"{avg_gnl:.4f}" if not np.isnan(avg_gnl) else "n/a"
     print(f"  rho = {rho:.1f}: {n} detections | mean(# agg/transcript) all_genes = {avg_all:.4f}, gnl_only = {gnl_str}")
+    if round(float(rho), 2) in rho_representative:
+        out_parquet = os.path.join(representative_dir, f"granules_rho_{round(float(rho), 2):.1f}.parquet")
+        sphere_all.to_parquet(out_parquet, index=False)
+        print(f"    -> saved {out_parquet}")
 
 # gamma: (2) gamma=1 = drop only, ... (3) gamma=0 = full (merge any overlap)
 s_volume = 1.0
@@ -565,13 +581,11 @@ for dice_thr in dice_thr_values:
 # Save and summary
 # ---------------------------------------------------------------------------
 
-# summary_path = os.path.join(output_path, "benchmark_rho_MERSCOPE_WT1.csv")
-summary_path = os.path.join(output_path, "benchmark_rho_MERSCOPE_WT1_three_genes.csv")
+summary_path = os.path.join(output_path, "benchmark_rho_MERSCOPE_WT1.csv")
 pd.DataFrame(num_detections_records).to_csv(summary_path, index=False)
 print(f"Saved: {summary_path}")
 
-# granule_path = os.path.join(output_path, "benchmark_rho_unique_genes_per_granule_MERSCOPE_WT1.csv")
-granule_path = os.path.join(output_path, "benchmark_rho_unique_genes_per_granule_MERSCOPE_WT1_three_genes.csv")
+granule_path = os.path.join(output_path, "benchmark_rho_unique_genes_per_granule_MERSCOPE_WT1.csv")
 pd.concat(unique_genes_per_granule_dfs, ignore_index=True).to_csv(granule_path, index=False)
 print(f"Saved: {granule_path}")
 
