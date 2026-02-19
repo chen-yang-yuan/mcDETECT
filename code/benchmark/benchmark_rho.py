@@ -28,7 +28,7 @@ from mcDETECT.model import mcDETECT
 # Paths and data
 # ---------------------------------------------------------------------------
 
-dataset = "MERSCOPE_WT_1"
+dataset = "MERSCOPE_AD_1"
 data_path = f"../../data/{dataset}/"
 output_path = f"../../output/benchmark/benchmark_rho/"
 representative_dir = os.path.join(output_path, f"{dataset}_representative_data")
@@ -581,11 +581,11 @@ for dice_thr in dice_thr_values:
 # Save and summary
 # ---------------------------------------------------------------------------
 
-summary_path = os.path.join(output_path, "benchmark_rho_MERSCOPE_WT1.csv")
+summary_path = os.path.join(output_path, f"benchmark_rho_{dataset}.csv")
 pd.DataFrame(num_detections_records).to_csv(summary_path, index=False)
 print(f"Saved: {summary_path}")
 
-granule_path = os.path.join(output_path, "benchmark_rho_unique_genes_per_granule_MERSCOPE_WT1.csv")
+granule_path = os.path.join(output_path, f"benchmark_rho_unique_genes_per_granule_{dataset}.csv")
 pd.concat(unique_genes_per_granule_dfs, ignore_index=True).to_csv(granule_path, index=False)
 print(f"Saved: {granule_path}")
 
