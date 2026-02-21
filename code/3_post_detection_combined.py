@@ -64,8 +64,11 @@ granule_adata_2 = mc2.profile(granules_2, genes = genes)
 print("Granule adata shape: ", granule_adata_1.shape, granule_adata_2.shape)
 
 # Add metadata columns
-if np.sum(granule_adata_1.obs["global_x"] != granules_1["sphere_x"]) > 0 + np.sum(granule_adata_2.obs["global_x"] != granules_2["sphere_x"]) > 0:
-    raise ValueError("Granule metadata and expression profile do not match!")
+mismatch1 = (granule_adata_1.obs["global_x"].to_numpy() != granules_1["sphere_x"].to_numpy()).sum()
+mismatch2 = (granule_adata_2.obs["global_x"].to_numpy() != granules_2["sphere_x"].to_numpy()).sum()
+
+if (mismatch1 > 0) or (mismatch2 > 0):
+    raise ValueError(f"Granule metadata and expression profile do not match! mismatches: {mismatch1}, {mismatch2}")
 else:
     granule_adata_1.obs["brain_area"] = granules_1["brain_area"]
     granule_adata_1.obs["global_x_new"] = granules_1["global_x_new"]
