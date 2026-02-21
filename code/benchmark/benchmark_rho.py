@@ -28,7 +28,7 @@ from mcDETECT.model import mcDETECT
 # Paths and data
 # ---------------------------------------------------------------------------
 
-dataset = "MERSCOPE_WT_1"
+dataset = "MERSCOPE_AD_1"
 data_path = f"../../data/{dataset}/"
 output_path = f"../../output/benchmark/benchmark_rho/"
 representative_dir = os.path.join(output_path, f"{dataset}_representative_data")
@@ -527,7 +527,7 @@ print(f"  no_ops: {n} detections | mean(# agg/transcript) all_genes = {avg_all:.
 
 # rho: (2) rho=0 = drop only, ... (3) rho=1 = full (merge even touching)
 # Representative granules (default strategy only): save parquet for rho in {0, 0.2, 0.5, 0.8}
-rho_representative = (0.0, 0.2, 0.5, 0.8)
+rho_representative = (0.0, 0.2, 0.4, 0.5, 0.6, 0.8)
 print("Benchmarking rho: (2) drop only (rho=0) .. (3) full (rho=1)...")
 for rho in rho_values:
     mc = mcDETECT(**mc_kwargs(rho=float(rho)))
