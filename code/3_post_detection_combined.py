@@ -1,4 +1,5 @@
 import anndata
+import numpy as np
 import pandas as pd
 import scanpy as sc
 from scipy.sparse import csr_matrix
@@ -60,6 +61,18 @@ mc2 = mcDETECT(type = "discrete", transcripts = transcripts_2, gnl_genes = syn_g
 # Profile granules
 granule_adata_1 = mc1.profile(granules_1, genes = genes)
 granule_adata_2 = mc2.profile(granules_2, genes = genes)
+print("Granule adata shape: ", granule_adata_1.shape, granule_adata_2.shape)
+
+# Add metadata columns
+if np.sum(granule_adata_1.obs["global_x"] != granules_1["sphere_x"]) > 0 + np.sum(granule_adata_2.obs["global_x"] != granules_2["sphere_x"]) > 0:
+    raise ValueError("Granule metadata and expression profile do not match!")
+else:
+    granule_adata_1.obs["brain_area"] = granules_1["brain_area"]
+    granule_adata_1.obs["global_x_new"] = granules_1["global_x_new"]
+    granule_adata_1.obs["global_y_new"] = granules_1["global_y_new"]
+    granule_adata_2.obs["brain_area"] = granules_2["brain_area"]
+    granule_adata_2.obs["global_x_new"] = granules_2["global_x_new"]
+    granule_adata_2.obs["global_y_new"] = granules_2["global_y_new"]
 
 # Adjust coordinates (manual)
 if compared_samples == ["MERSCOPE_WT_1", "MERSCOPE_AD_1"]:
