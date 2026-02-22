@@ -28,7 +28,7 @@ from mcDETECT.model import mcDETECT
 # Paths and data
 # ---------------------------------------------------------------------------
 
-dataset = "MERSCOPE_WT_1"
+dataset = "MERSCOPE_AD_1"
 data_path = f"../../data/{dataset}/"
 output_path = f"../../output/benchmark/benchmark_rho/"
 representative_dir = os.path.join(output_path, f"{dataset}_representative_data")
