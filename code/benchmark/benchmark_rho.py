@@ -28,7 +28,7 @@ from mcDETECT.model import mcDETECT
 # Paths and data
 # ---------------------------------------------------------------------------
 
-dataset = "MERSCOPE_AD_1"
+dataset = "MERSCOPE_WT_1"
 data_path = f"../../data/{dataset}/"
 output_path = f"../../output/benchmark/benchmark_rho/"
 representative_dir = os.path.join(output_path, f"{dataset}_representative_data")
@@ -526,7 +526,7 @@ n, avg_all, avg_gnl = compute_metrics(sphere_no_ops, "no_ops", np.nan, np.nan, n
 print(f"  no_ops: {n} detections | mean(# agg/transcript) all_genes = {avg_all:.4f}, gnl_only = {avg_gnl:.4f}")
 
 # rho: (2) rho=0 = drop only, ... (3) rho=1 = full (merge even touching)
-# Representative granules (default strategy only): save parquet for rho in {0, 0.2, 0.5, 0.8}
+# Representative granules (default strategy only): save parquet for rho in {0, 0.2, 0.4, 0.5, 0.6, 0.8}
 rho_representative = (0.0, 0.2, 0.4, 0.5, 0.6, 0.8)
 print("Benchmarking rho: (2) drop only (rho=0) .. (3) full (rho=1)...")
 for rho in rho_values:
@@ -537,7 +537,7 @@ for rho in rho_values:
     n, avg_all, avg_gnl = compute_metrics(sphere_all, "merge", float(rho), np.nan, np.nan, np.nan)
     gnl_str = f"{avg_gnl:.4f}" if not np.isnan(avg_gnl) else "n/a"
     print(f"  rho = {rho:.1f}: {n} detections | mean(# agg/transcript) all_genes = {avg_all:.4f}, gnl_only = {gnl_str}")
-    if round(float(rho), 2) in rho_representative:
+    if any(np.isclose(float(rho), r, atol=1e-6) for r in rho_representative):
         out_parquet = os.path.join(representative_dir, f"granules_rho_{round(float(rho), 2):.1f}.parquet")
         sphere_all.to_parquet(out_parquet, index=False)
         print(f"    -> saved {out_parquet}")
