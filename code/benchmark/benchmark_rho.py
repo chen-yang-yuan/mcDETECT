@@ -542,84 +542,84 @@ for rho in rho_values:
         sphere_all.to_parquet(out_parquet, index=False)
         print(f"    -> saved {out_parquet}")
 
-# # gamma: (2) gamma=1 = drop only, ... (3) gamma=0 = full (merge any overlap)
-# s_volume = 1.0
-# print("Benchmarking gamma: (2) drop only (gamma=1) .. (3) full (gamma=0)...")
-# for gamma in gamma_values:
-#     sphere_all = merge_sphere_by_intersection(
-#         sphere_dict, gnl_genes, float(gamma), s_volume,
-#         tree_transcripts, transcript_coords, gene_per_transcript,
-#     )
-#     n, avg_all, avg_gnl = compute_metrics(sphere_all, "merge_volume", np.nan, float(gamma), np.nan, np.nan)
-#     gnl_str = f"{avg_gnl:.4f}" if not np.isnan(avg_gnl) else "n/a"
-#     print(f"  gamma = {gamma:.1f}: {n} detections | mean(# agg/transcript) all_genes = {avg_all:.4f}, gnl_only = {gnl_str}")
+# gamma: (2) gamma=1 = drop only, ... (3) gamma=0 = full (merge any overlap)
+s_volume = 1.0
+print("Benchmarking gamma: (2) drop only (gamma=1) .. (3) full (gamma=0)...")
+for gamma in gamma_values:
+    sphere_all = merge_sphere_by_intersection(
+        sphere_dict, gnl_genes, float(gamma), s_volume,
+        tree_transcripts, transcript_coords, gene_per_transcript,
+    )
+    n, avg_all, avg_gnl = compute_metrics(sphere_all, "merge_volume", np.nan, float(gamma), np.nan, np.nan)
+    gnl_str = f"{avg_gnl:.4f}" if not np.isnan(avg_gnl) else "n/a"
+    print(f"  gamma = {gamma:.1f}: {n} detections | mean(# agg/transcript) all_genes = {avg_all:.4f}, gnl_only = {gnl_str}")
 
-# # jaccard_thr: (2) jaccard_thr=1 = drop only, ... (3) jaccard_thr=0 = full
-# print("Benchmarking jaccard_thr: (2) drop only (jaccard_thr=1) .. (3) full (jaccard_thr=0)...")
-# for jaccard_thr in jaccard_thr_values:
-#     sphere_all = merge_sphere_by_jaccard(
-#         sphere_dict, gnl_genes, float(jaccard_thr), s_volume,
-#         tree_transcripts, transcript_coords, gene_per_transcript,
-#     )
-#     n, avg_all, avg_gnl = compute_metrics(sphere_all, "merge_jaccard", np.nan, np.nan, float(jaccard_thr), np.nan)
-#     gnl_str = f"{avg_gnl:.4f}" if not np.isnan(avg_gnl) else "n/a"
-#     print(f"  jaccard_thr = {jaccard_thr:.1f}: {n} detections | mean(# agg/transcript) all_genes = {avg_all:.4f}, gnl_only = {gnl_str}")
+# jaccard_thr: (2) jaccard_thr=1 = drop only, ... (3) jaccard_thr=0 = full
+print("Benchmarking jaccard_thr: (2) drop only (jaccard_thr=1) .. (3) full (jaccard_thr=0)...")
+for jaccard_thr in jaccard_thr_values:
+    sphere_all = merge_sphere_by_jaccard(
+        sphere_dict, gnl_genes, float(jaccard_thr), s_volume,
+        tree_transcripts, transcript_coords, gene_per_transcript,
+    )
+    n, avg_all, avg_gnl = compute_metrics(sphere_all, "merge_jaccard", np.nan, np.nan, float(jaccard_thr), np.nan)
+    gnl_str = f"{avg_gnl:.4f}" if not np.isnan(avg_gnl) else "n/a"
+    print(f"  jaccard_thr = {jaccard_thr:.1f}: {n} detections | mean(# agg/transcript) all_genes = {avg_all:.4f}, gnl_only = {gnl_str}")
 
-# # dice_thr: (2) dice_thr=1 = drop only, ... (3) dice_thr=0 = full
-# print("Benchmarking dice_thr: (2) drop only (dice_thr=1) .. (3) full (dice_thr=0)...")
-# for dice_thr in dice_thr_values:
-#     sphere_all = merge_sphere_by_dice(
-#         sphere_dict, gnl_genes, float(dice_thr), s_volume,
-#         tree_transcripts, transcript_coords, gene_per_transcript,
-#     )
-#     n, avg_all, avg_gnl = compute_metrics(sphere_all, "merge_dice", np.nan, np.nan, np.nan, float(dice_thr))
-#     gnl_str = f"{avg_gnl:.4f}" if not np.isnan(avg_gnl) else "n/a"
-#     print(f"  dice_thr = {dice_thr:.1f}: {n} detections | mean(# agg/transcript) all_genes = {avg_all:.4f}, gnl_only = {gnl_str}")
+# dice_thr: (2) dice_thr=1 = drop only, ... (3) dice_thr=0 = full
+print("Benchmarking dice_thr: (2) drop only (dice_thr=1) .. (3) full (dice_thr=0)...")
+for dice_thr in dice_thr_values:
+    sphere_all = merge_sphere_by_dice(
+        sphere_dict, gnl_genes, float(dice_thr), s_volume,
+        tree_transcripts, transcript_coords, gene_per_transcript,
+    )
+    n, avg_all, avg_gnl = compute_metrics(sphere_all, "merge_dice", np.nan, np.nan, np.nan, float(dice_thr))
+    gnl_str = f"{avg_gnl:.4f}" if not np.isnan(avg_gnl) else "n/a"
+    print(f"  dice_thr = {dice_thr:.1f}: {n} detections | mean(# agg/transcript) all_genes = {avg_all:.4f}, gnl_only = {gnl_str}")
 
 
-# # ---------------------------------------------------------------------------
-# # Save and summary
-# # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Save and summary
+# ---------------------------------------------------------------------------
 
-# summary_path = os.path.join(output_path, f"benchmark_rho_{dataset}.csv")
-# pd.DataFrame(num_detections_records).to_csv(summary_path, index=False)
-# print(f"Saved: {summary_path}")
+summary_path = os.path.join(output_path, f"benchmark_rho_{dataset}.csv")
+pd.DataFrame(num_detections_records).to_csv(summary_path, index=False)
+print(f"Saved: {summary_path}")
 
-# granule_path = os.path.join(output_path, f"benchmark_rho_unique_genes_per_granule_{dataset}.csv")
-# pd.concat(unique_genes_per_granule_dfs, ignore_index=True).to_csv(granule_path, index=False)
-# print(f"Saved: {granule_path}")
+granule_path = os.path.join(output_path, f"benchmark_rho_unique_genes_per_granule_{dataset}.csv")
+pd.concat(unique_genes_per_granule_dfs, ignore_index=True).to_csv(granule_path, index=False)
+print(f"Saved: {granule_path}")
 
-# # Interpretation
-# print("\n--- Interpretation ---")
-# print("Scenarios spanned: (1) no_ops = no drop, no merge; (2) drop contained only (rho=0, gamma=1, jaccard_thr=1, dice_thr=1); (3) full (rho=1, gamma=0, jaccard_thr=0, dice_thr=0).")
-# print("Metric: For each transcript in >= 1 aggregate, # of unique aggregates it belongs to; we report the mean. Ideal = 1 (no overlap).")
-# print("  all_genes: denominator = any transcript (any gene) in >= 1 sphere.")
-# print("  gnl_only:  denominator = transcripts whose gene is in gnl_genes, in >= 1 sphere.")
-# recs = num_detections_records
-# if len(recs) >= 2:
-#     no_ops_det = recs[0]["num_detections"]
-#     rho0_rec = next((r for r in recs if r.get("scenario") == "merge" and r.get("rho") == 0.0), None)
-#     rho1_rec = next((r for r in recs if r.get("scenario") == "merge" and r.get("rho") == 1.0), None)
-#     if rho0_rec is not None:
-#         print(f"  no_ops vs rho=0: {no_ops_det} -> {rho0_rec['num_detections']} detections (dropping contained: -{no_ops_det - rho0_rec['num_detections']}).")
-#     if rho0_rec is not None and rho1_rec is not None:
-#         print(f"  rho=0 vs rho=1: {rho0_rec['num_detections']} -> {rho1_rec['num_detections']} detections (merging overlapping: -{rho0_rec['num_detections'] - rho1_rec['num_detections']}).")
-# print("  Mean > 1: many transcripts lie in multiple aggregates (cross-gene and within-gene).")
-# gamma_recs = [r for r in recs if r.get("scenario") == "merge_volume"]
-# if gamma_recs:
-#     gamma0 = next((r for r in gamma_recs if r.get("gamma") == 0.0), None)
-#     gamma1 = next((r for r in gamma_recs if r.get("gamma") == 1.0), None)
-#     if gamma0 is not None and gamma1 is not None:
-#         print(f"  gamma=0 vs gamma=1 (volume): {gamma0['num_detections']} -> {gamma1['num_detections']} detections.")
-# jaccard_recs = [r for r in recs if r.get("scenario") == "merge_jaccard"]
-# if jaccard_recs:
-#     j0 = next((r for r in jaccard_recs if r.get("jaccard_thr") == 0.0), None)
-#     j1 = next((r for r in jaccard_recs if r.get("jaccard_thr") == 1.0), None)
-#     if j0 is not None and j1 is not None:
-#         print(f"  jaccard_thr=0 vs 1 (Jaccard): {j0['num_detections']} -> {j1['num_detections']} detections.")
-# dice_recs = [r for r in recs if r.get("scenario") == "merge_dice"]
-# if dice_recs:
-#     d0 = next((r for r in dice_recs if r.get("dice_thr") == 0.0), None)
-#     d1 = next((r for r in dice_recs if r.get("dice_thr") == 1.0), None)
-#     if d0 is not None and d1 is not None:
-#         print(f"  dice_thr=0 vs 1 (Dice): {d0['num_detections']} -> {d1['num_detections']} detections.")
+# Interpretation
+print("\n--- Interpretation ---")
+print("Scenarios spanned: (1) no_ops = no drop, no merge; (2) drop contained only (rho=0, gamma=1, jaccard_thr=1, dice_thr=1); (3) full (rho=1, gamma=0, jaccard_thr=0, dice_thr=0).")
+print("Metric: For each transcript in >= 1 aggregate, # of unique aggregates it belongs to; we report the mean. Ideal = 1 (no overlap).")
+print("  all_genes: denominator = any transcript (any gene) in >= 1 sphere.")
+print("  gnl_only:  denominator = transcripts whose gene is in gnl_genes, in >= 1 sphere.")
+recs = num_detections_records
+if len(recs) >= 2:
+    no_ops_det = recs[0]["num_detections"]
+    rho0_rec = next((r for r in recs if r.get("scenario") == "merge" and r.get("rho") == 0.0), None)
+    rho1_rec = next((r for r in recs if r.get("scenario") == "merge" and r.get("rho") == 1.0), None)
+    if rho0_rec is not None:
+        print(f"  no_ops vs rho=0: {no_ops_det} -> {rho0_rec['num_detections']} detections (dropping contained: -{no_ops_det - rho0_rec['num_detections']}).")
+    if rho0_rec is not None and rho1_rec is not None:
+        print(f"  rho=0 vs rho=1: {rho0_rec['num_detections']} -> {rho1_rec['num_detections']} detections (merging overlapping: -{rho0_rec['num_detections'] - rho1_rec['num_detections']}).")
+print("  Mean > 1: many transcripts lie in multiple aggregates (cross-gene and within-gene).")
+gamma_recs = [r for r in recs if r.get("scenario") == "merge_volume"]
+if gamma_recs:
+    gamma0 = next((r for r in gamma_recs if r.get("gamma") == 0.0), None)
+    gamma1 = next((r for r in gamma_recs if r.get("gamma") == 1.0), None)
+    if gamma0 is not None and gamma1 is not None:
+        print(f"  gamma=0 vs gamma=1 (volume): {gamma0['num_detections']} -> {gamma1['num_detections']} detections.")
+jaccard_recs = [r for r in recs if r.get("scenario") == "merge_jaccard"]
+if jaccard_recs:
+    j0 = next((r for r in jaccard_recs if r.get("jaccard_thr") == 0.0), None)
+    j1 = next((r for r in jaccard_recs if r.get("jaccard_thr") == 1.0), None)
+    if j0 is not None and j1 is not None:
+        print(f"  jaccard_thr=0 vs 1 (Jaccard): {j0['num_detections']} -> {j1['num_detections']} detections.")
+dice_recs = [r for r in recs if r.get("scenario") == "merge_dice"]
+if dice_recs:
+    d0 = next((r for r in dice_recs if r.get("dice_thr") == 0.0), None)
+    d1 = next((r for r in dice_recs if r.get("dice_thr") == 1.0), None)
+    if d0 is not None and d1 is not None:
+        print(f"  dice_thr=0 vs 1 (Dice): {d0['num_detections']} -> {d1['num_detections']} detections.")
