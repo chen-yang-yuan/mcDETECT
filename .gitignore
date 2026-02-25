@@ -20,6 +20,8 @@ simulation/output/
 
 # Figure related
 **/figures.*
+**/figures_response.*
+**/figures_main.*
 
 # Python
 __pycache__/
