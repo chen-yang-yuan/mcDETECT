@@ -1,4 +1,5 @@
 import os
+import argparse
 import numpy as np
 import pandas as pd
 from scipy.spatial import cKDTree
@@ -26,6 +27,19 @@ genes = list(genes.iloc[:, 0])
 # Negative control markers
 nc_genes = pd.read_csv(os.path.join(data_path, "processed_data", "negative_controls.csv"))
 nc_genes = list(nc_genes["Gene"])
+
+# Precompute NC transcripts + 3D tree once (reused across all runs)
+nc_trans = transcripts[transcripts["target"].isin(nc_genes)]
+if nc_trans.shape[0] > 0:
+    NC_TREE = cKDTree(
+        np.c_[
+            nc_trans["global_x"].to_numpy(),
+            nc_trans["global_y"].to_numpy(),
+            nc_trans["global_z"].to_numpy(),
+        ]
+    )
+else:
+    NC_TREE = None
 
 # Granule marker genes (same as syn_genes in code/2_detection.py)
 gnl_genes = [
@@ -60,25 +74,19 @@ def make_tree_3d(d1, d2, d3):
     return cKDTree(points)
 
 
-def compute_nc_ratio(granules_df, transcripts_df, nc_gene_list):
+def compute_nc_ratio(granules_df):
     """
     Per granule: nc_ratio = (NC transcript count in sphere) / size.
-    Centers use (sphere_x, sphere_y, layer_z), radius is sphere_r.
+    Uses precomputed NC_TREE on all negative-control transcripts.
     """
-    nc_trans = transcripts_df[transcripts_df["target"].isin(nc_gene_list)]
-    if nc_trans.shape[0] == 0 or granules_df.shape[0] == 0:
+    if NC_TREE is None or granules_df.shape[0] == 0:
         return np.zeros(granules_df.shape[0], dtype=float)
 
-    tree = make_tree_3d(
-        nc_trans["global_x"].to_numpy(),
-        nc_trans["global_y"].to_numpy(),
-        nc_trans["global_z"].to_numpy(),
-    )
     centers = granules_df[["sphere_x", "sphere_y", "layer_z"]].to_numpy()
     radii = granules_df["sphere_r"].to_numpy()
     sizes = granules_df["size"].to_numpy().astype(float)
 
-    counts = np.array([len(tree.query_ball_point(c, r)) for c, r in zip(centers, radii)])
+    counts = np.array([len(NC_TREE.query_ball_point(c, r)) for c, r in zip(centers, radii)])
     with np.errstate(divide="ignore", invalid="ignore"):
         ratios = np.where(sizes > 0, counts / sizes, 0.0)
     return ratios
@@ -121,8 +129,8 @@ def summarize_run(granules_df, eps, minspl, scenario):
     if n == 0:
         nc_ratio = np.array([], dtype=float)
     else:
-        nc_ratio = compute_nc_ratio(granules_df, transcripts, nc_genes)
-        granules_df = granules_df.copy()
+        # Add nc_ratio in-place to avoid copying the full DataFrame
+        nc_ratio = compute_nc_ratio(granules_df)
         granules_df["nc_ratio"] = nc_ratio
 
     mean_aggregate_radius = granules_df["sphere_r"].mean() if n else np.nan
@@ -141,21 +149,51 @@ def summarize_run(granules_df, eps, minspl, scenario):
     }, granules_df
 
 
-# ==================== Benchmark sweeps ==================== #
+def build_configs(args):
+    """
+    Build list of (scenario, eps, minspl) configs.
+    If --eps and --minspl are provided, run only that pair; otherwise run full sweep.
+    """
+    configs = []
+    if args.eps is not None and args.minspl is not None:
+        scenario = args.scenario if args.scenario is not None else "custom"
+        configs.append((scenario, float(args.eps), int(args.minspl)))
+    else:
+        # Baseline configuration (current defaults)
+        configs.append(("baseline", 1.5, 3))
+        # Sweep eps while fixing minspl at default (3)
+        for eps_val in [1.0, 2.0, 2.5, 5.0]:
+            configs.append(("eps_sweep", eps_val, 3))
+        # Sweep minspl while fixing eps at default (1.5)
+        for minspl_val in [4, 5]:
+            configs.append(("minspl_sweep", 1.5, minspl_val))
+    return configs
 
-if __name__ == "__main__":
+
+def main():
+    parser = argparse.ArgumentParser(description="Benchmark mcDETECT DBSCAN parameters.")
+    parser.add_argument(
+        "--eps",
+        type=float,
+        default=None,
+        help="If set together with --minspl, run only this eps/minspl configuration.",
+    )
+    parser.add_argument(
+        "--minspl",
+        type=int,
+        default=None,
+        help="If set together with --eps, run only this eps/minspl configuration.",
+    )
+    parser.add_argument(
+        "--scenario",
+        type=str,
+        default=None,
+        help="Optional scenario label when using --eps/--minspl (default: 'custom').",
+    )
+    args = parser.parse_args()
+
     results = []
-
-    # Baseline configuration (current defaults)
-    configs = [("baseline", 1.5, 3)]
-
-    # Sweep eps while fixing minspl at default (3)
-    for eps_val in [1.0, 2.0, 2.5, 5.0]:
-        configs.append(("eps_sweep", eps_val, 3))
-
-    # Sweep minspl while fixing eps at default (1.5)
-    for minspl_val in [4, 5]:
-        configs.append(("minspl_sweep", 1.5, minspl_val))
+    configs = build_configs(args)
 
     for scenario, eps_val, minspl_val in configs:
         print(f"Running DBSCAN benchmark: scenario={scenario}, eps={eps_val}, minspl={minspl_val}")
@@ -174,3 +212,7 @@ if __name__ == "__main__":
     results_csv = os.path.join(benchmark_path, f"{dataset}_benchmark_DBSCAN_results.csv")
     results_df.to_csv(results_csv, index=False)
     print(f"Saved DBSCAN benchmark summary to {results_csv}")
+
+
+if __name__ == "__main__":
+    main()
