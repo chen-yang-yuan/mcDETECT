@@ -16,10 +16,10 @@ data_path = "../data/MERSCOPE_WT_1/"
 output_path = "../output/MERSCOPE_WT_1/"
 
 # Read transcripts
-transcripts = pd.read_parquet(data_path + "transcripts.parquet")
+transcripts = pd.read_parquet(data_path + "processed_data/transcripts.parquet")
 
 # Read genes
-genes = pd.read_csv(data_path + "genes.csv")
+genes = pd.read_csv(data_path + "processed_data/genes.csv")
 genes = list(genes.iloc[:, 0])
 
 # All markers
