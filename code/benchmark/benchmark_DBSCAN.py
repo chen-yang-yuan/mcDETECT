@@ -18,7 +18,7 @@ os.makedirs(benchmark_path, exist_ok=True)
 # ==================== Load data ==================== #
 
 # Transcripts
-transcripts = pd.read_parquet(os.path.join(data_path, "processed_data", "transcripts.parquet"))
+transcripts = pd.read_parquet(os.path.join(data_path, "processed_data", "transcripts_small_region.parquet"))
 
 # Genes (not strictly needed here but kept for completeness/consistency)
 genes = pd.read_csv(os.path.join(data_path, "processed_data", "genes.csv"))
