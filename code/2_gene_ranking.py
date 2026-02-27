@@ -40,8 +40,8 @@ mc = mcDETECT(type = "discrete", transcripts = transcripts, gnl_genes = all_gene
 # Single-marker detection
 num_granules = []
 for idx, gene in enumerate(all_genes):
-    num, data_low, data_high = mc.dbscan(target_names = [gene])
-    num_granules.append(num)
+    sphere_dict = mc.dbscan(target_names = [gene])
+    num_granules.append(len(sphere_dict[0]))
     print(f"{idx + 1} genes processed!")
     
 # Gene ranking
@@ -85,8 +85,8 @@ mc = mcDETECT(type = "continuous", transcripts = transcripts, gnl_genes = all_ge
 # Single-marker detection
 num_granules = []
 for idx, gene in enumerate(all_genes):
-    num, data_low, data_high = mc.dbscan(target_names = [gene])
-    num_granules.append(num)
+    sphere_dict = mc.dbscan(target_names = [gene])
+    num_granules.append(len(sphere_dict[0]))
     print(f"{idx + 1} genes processed!")
     
 # Gene ranking
