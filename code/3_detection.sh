@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=2_detection
+#SBATCH --job-name=3_detection
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 #SBATCH --time=240:00:00
@@ -28,6 +28,6 @@ which python
 python --version
 
 # Run your script
-python3 2_detection.py
+python3 3_detection.py
 
 echo "Job finished at $(date)"
