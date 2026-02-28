@@ -162,7 +162,7 @@ def build_configs(args):
         # Baseline configuration (current defaults)
         configs.append(("baseline", 1.5, 3))
         # Sweep eps while fixing minspl at default (3)
-        for eps_val in [1.0, 2.0, 2.5, 5.0]:
+        for eps_val in [1.0, 2.0, 2.5, 3.0]:
             configs.append(("eps_sweep", eps_val, 3))
         # Sweep minspl while fixing eps at default (1.5)
         for minspl_val in [4, 5]:
