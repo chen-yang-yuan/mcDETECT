@@ -101,7 +101,8 @@ def run_detection(eps, minspl):
         type="discrete",
         transcripts=transcripts,
         gnl_genes=gnl_genes,
-        nc_genes=None,      # turn off negative control filtering during detection
+        # nc_genes=None,      # turn off negative control filtering during detection
+        nc_genes=nc_genes,
         eps=eps,
         minspl=minspl,
         grid_len=1.0,
@@ -109,7 +110,8 @@ def run_detection(eps, minspl):
         alpha=10.0,
         low_bound=3,
         size_thr=1e5,       # effectively no size filtering
-        in_soma_thr=1.01,   # effectively no in-soma filtering
+        # in_soma_thr=1.01,   # effectively no in-soma filtering
+        in_soma_thr=0.1,
         l=1.0,
         rho=0.2,
         s=1.0,
@@ -203,13 +205,13 @@ def main():
         results.append(summary_row)
 
         # Save per-run granules with DBSCAN parameters in filename
-        fname = f"{dataset}_granules_eps{eps_val}_minspl{minspl_val}.parquet"
+        fname = f"{dataset}_granules_eps{eps_val}_minspl{minspl_val}_with_filtering.parquet"
         granules_with_nc.to_parquet(os.path.join(benchmark_path, fname), index=False)
         print(f"  Saved granules to {os.path.join(benchmark_path, fname)} (n={granules_with_nc.shape[0]})")
 
     # Save all summary statistics into a single CSV file
     results_df = pd.DataFrame(results)
-    results_csv = os.path.join(benchmark_path, f"{dataset}_benchmark_DBSCAN_results.csv")
+    results_csv = os.path.join(benchmark_path, f"{dataset}_benchmark_DBSCAN_results_with_filtering.csv")
     results_df.to_csv(results_csv, index=False)
     print(f"Saved DBSCAN benchmark summary to {results_csv}")
 
