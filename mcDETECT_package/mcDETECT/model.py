@@ -18,25 +18,38 @@ class mcDETECT:
     
     
     def __init__(self, type, transcripts, gnl_genes, nc_genes = None, eps = 1.5, minspl = None, grid_len = 1.0, cutoff_prob = 0.95, alpha = 5.0, low_bound = 3,
-                 size_thr = 4.0, in_soma_thr = 0.1, l = 1.0, rho = 0.2, s = 1.0, nc_top = 20, nc_thr = 0.1):
+                 size_thr = 4.0, in_soma_thr = 0.1, l = 1.0, rho = 0.2, s = 1.0, nc_top = 20, nc_thr = 0.1, merge_genes = False, merged_gene_label = "merged"):
         
-        self.type = type                        # string, now supports "discrete" (e.g., MERSCOPE, CosMx) and "continuous" (e.g., Xenium)
-        self.transcripts = transcripts          # dataframe, transcripts file
-        self.gnl_genes = gnl_genes              # list, string, all granule markers
-        self.nc_genes = nc_genes                # list, string, all negative controls
-        self.eps = eps                          # numeric, searching radius epsilon
-        self.minspl = minspl                    # integer, manually select min_samples, i.e., no automatic parameter selection
-        self.grid_len = grid_len                # numeric, length of grids for computing the tissue area
-        self.cutoff_prob = cutoff_prob          # numeric, cutoff probability in parameter selection for min_samples
-        self.alpha = alpha                      # numeric, scaling factor in parameter selection for min_samples
-        self.low_bound = low_bound              # integer, lower bound in parameter selection for min_samples
-        self.size_thr = size_thr                # numeric, threshold for maximum radius of an aggregation
-        self.in_soma_thr = in_soma_thr          # numeric, threshold for in-soma ratio
-        self.l = l                              # numeric, scaling factor for seaching overlapped spheres
-        self.rho = rho                          # numeric, threshold for determining overlaps
-        self.s = s                              # numeric, scaling factor for merging overlapped spheres
-        self.nc_top = nc_top                    # integer, number of negative controls retained for filtering
-        self.nc_thr = nc_thr                    # numeric, threshold for negative control filtering
+        self.type = type                                # string, now supports "discrete" (e.g., MERSCOPE, CosMx) and "continuous" (e.g., Xenium)
+        self.transcripts = transcripts                  # dataframe, transcripts file
+        self.gnl_genes = gnl_genes                      # list, string, all granule markers
+        self.nc_genes = nc_genes                        # list, string, all negative controls
+        self.eps = eps                                  # numeric, searching radius epsilon
+        self.minspl = minspl                            # integer, manually select min_samples, i.e., no automatic parameter selection
+        self.grid_len = grid_len                        # numeric, length of grids for computing the tissue area
+        self.cutoff_prob = cutoff_prob                  # numeric, cutoff probability in parameter selection for min_samples
+        self.alpha = alpha                              # numeric, scaling factor in parameter selection for min_samples
+        self.low_bound = low_bound                      # integer, lower bound in parameter selection for min_samples
+        self.size_thr = size_thr                        # numeric, threshold for maximum radius of an aggregation
+        self.in_soma_thr = in_soma_thr                  # numeric, threshold for in-soma ratio
+        self.l = l                                      # numeric, scaling factor for seaching overlapped spheres
+        self.rho = rho                                  # numeric, threshold for determining overlaps
+        self.s = s                                      # numeric, scaling factor for merging overlapped spheres
+        self.nc_top = nc_top                            # integer, number of negative controls retained for filtering
+        self.nc_thr = nc_thr                            # numeric, threshold for negative control filtering
+        self.merge_genes = merge_genes                  # bool, if True merge gnl_genes into one marker for detection
+        self.merged_gene_label = merged_gene_label      # str, merged marker label used in detection
+        
+        # detection-only target column (keep transcripts["target"] unchanged for downstream analysis)
+        self._orig_target_col = "target"
+        self._detect_target_col = self._orig_target_col
+        if self.merge_genes:
+            if "target_original" not in self.transcripts.columns:
+                self.transcripts["target_original"] = self.transcripts[self._orig_target_col]
+            self.transcripts["target_detect"] = np.where(self.transcripts[self._orig_target_col].isin(self.gnl_genes),
+                                                         self.merged_gene_label,
+                                                         self.transcripts[self._orig_target_col])
+            self._detect_target_col = "target_detect"
         
         if self.type == "discrete":
             self.z_grid = sorted(self.transcripts["global_z"].unique())     # sorted z-grid for discrete platforms
@@ -73,7 +86,7 @@ class mcDETECT:
     
     # [INNER] calculate optimal min_samples, input for dbscan()
     def poisson_select(self, gene_name):
-        num_trans = np.sum(self.transcripts["target"] == gene_name)
+        num_trans = np.sum(self.transcripts[self._detect_target_col] == gene_name)
         bg_density = num_trans / self.tissue_area()
         cutoff_density = poisson.ppf(self.cutoff_prob, mu = self.alpha * bg_density * (np.pi * self.eps ** 2))
         optimal_m = int(max(cutoff_density, self.low_bound))
@@ -84,18 +97,109 @@ class mcDETECT:
     def dbscan(self, target_names = None, record_cell_id = False):
         
         if target_names is None:
-            target_names = self.gnl_genes
-        transcripts = self.transcripts[self.transcripts["target"].isin(target_names)]
+            target_names = [self.merged_gene_label] if self.merge_genes else self.gnl_genes
+        detect_col = self._detect_target_col
+        transcripts = self.transcripts[self.transcripts[detect_col].isin(target_names)]
         
         z_grid = self.z_grid_np if self.type == "discrete" else None
         
         sphere_dict = {}
         
+        # ---------- [merged-gene detection] run DBSCAN once on all (merged) granule transcripts ---------- #
+        if self.merge_genes and len(target_names) == 1:
+            j = target_names[0]
+            target = transcripts[transcripts[detect_col] == j]
+            if target.shape[0] == 0:
+                cols = ["sphere_x", "sphere_y", "sphere_z", "layer_z", "sphere_r", "size", "comp", "in_soma_ratio", "gene"]
+                if record_cell_id:
+                    cols = cols + ["cell_id"]
+                sphere_dict[0] = pd.DataFrame(columns=cols)
+                return sphere_dict
+
+            tree_all = make_tree(d1=np.array(target["global_x"]), d2=np.array(target["global_y"]), d3=np.array(target["global_z"]))
+            orig_col = "target_original" if "target_original" in target.columns else self._orig_target_col
+
+            if self.minspl is None:
+                min_spl = self.poisson_select(j)
+            else:
+                min_spl = self.minspl
+            X = np.array(target[["global_x", "global_y", "global_z"]])
+            db = DBSCAN(eps=self.eps, min_samples=min_spl, algorithm="kd_tree").fit(X)
+            labels = db.labels_
+            n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+
+            cell_id, sphere_x, sphere_y, sphere_z, layer_z, sphere_r, sphere_size, sphere_comp, sphere_score = [], [], [], [], [], [], [], [], []
+
+            for k in range(n_clusters):
+                mask = (labels == k)
+                coords = X[mask]
+                if coords.shape[0] == 0:
+                    continue
+
+                temp = pd.DataFrame(coords, columns=["global_x", "global_y", "global_z"])
+                temp = temp.drop_duplicates()
+                coords_unique = temp.to_numpy()
+                if coords_unique.shape[0] < self.low_bound:
+                    print(f"Skipping small cluster for gene {j}, cluster {k} (n = {coords_unique.shape[0]})")
+                    continue
+
+                try:
+                    center, r2 = miniball.get_bounding_ball(coords_unique, epsilon=1e-8)
+                except np.linalg.LinAlgError:
+                    print(f"Warning: singular matrix for gene {j}, cluster {k} —- using fallback sphere.")
+                    center = coords_unique.mean(axis=0)
+                    dists = np.linalg.norm(coords_unique - center, axis=1)
+                    r2 = (dists.max() ** 2)
+                radius = np.sqrt(r2)
+
+                if z_grid is not None:
+                    closest_z = z_grid[np.argmin(np.abs(z_grid - center[2]))]
+                else:
+                    closest_z = center[2]
+
+                if record_cell_id:
+                    temp_target = target[mask]
+                    temp_cell_id_mode = temp_target["cell_id"].mode()[0]
+                    cell_id.append(temp_cell_id_mode)
+
+                # compute sphere features based on all merged (granule) transcripts within the sphere
+                within_idx = tree_all.query_ball_point([center[0], center[1], center[2]], radius)
+                within_trans = target.iloc[within_idx]
+                total_size = within_trans.shape[0]
+                if total_size == 0:
+                    continue
+                total_in_soma = np.sum(within_trans["overlaps_nucleus"])
+                total_comp = int(within_trans[orig_col].nunique())
+                in_soma_score = total_in_soma / total_size
+
+                sphere_x.append(center[0])
+                sphere_y.append(center[1])
+                sphere_z.append(center[2])
+                layer_z.append(closest_z)
+                sphere_r.append(radius)
+                sphere_size.append(total_size)
+                sphere_comp.append(total_comp)
+                sphere_score.append(in_soma_score)
+
+            sphere = pd.DataFrame(list(zip(sphere_x, sphere_y, sphere_z, layer_z, sphere_r, sphere_size, sphere_comp, sphere_score, [j] * len(sphere_x))),
+                                  columns=["sphere_x", "sphere_y", "sphere_z", "layer_z", "sphere_r", "size", "comp", "in_soma_ratio", "gene"])
+            sphere = sphere.astype({"sphere_x": float, "sphere_y": float, "sphere_z": float, "layer_z": float, "sphere_r": float, "size": float, "comp": float, "in_soma_ratio": float, "gene": str})
+            if record_cell_id:
+                sphere["cell_id"] = cell_id
+                sphere = sphere.astype({"cell_id": str})
+
+            sphere = sphere[(sphere["sphere_r"] < self.size_thr) & (sphere["in_soma_ratio"] < self.in_soma_thr)]
+            sphere = sphere.reset_index(drop=True)
+            sphere_dict[0] = sphere
+            print("1 out of 1 genes processed!")
+            return sphere_dict
+
+        # ---------- [single-gene detection] run DBSCAN for each granule marker ---------- #
         for j_idx, j in enumerate(target_names):
             
             # split transcripts
-            target = transcripts[transcripts["target"] == j]
-            others = transcripts[transcripts["target"] != j]
+            target = transcripts[transcripts[detect_col] == j]
+            others = transcripts[transcripts[detect_col] != j]
             tree = make_tree(d1 = np.array(others["global_x"]), d2 = np.array(others["global_y"]), d3 = np.array(others["global_z"]))
             
             # 3D DBSCAN
@@ -157,7 +261,7 @@ class mcDETECT:
                 other_trans = others.iloc[other_idx]
                 other_in_soma = np.sum(other_trans["overlaps_nucleus"])
                 other_size = other_trans.shape[0]
-                other_comp = len(other_trans["target"].unique())
+                other_comp = len(other_trans[detect_col].unique())
                 total_size = temp_size + other_size
                 total_comp = 1 + other_comp
                 in_soma_score = (temp_in_soma + other_in_soma) / total_size
