@@ -3,8 +3,8 @@
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 #SBATCH --time=240:00:00
-#SBATCH --mem=200G
-#SBATCH --cpus-per-task=16
+#SBATCH --mem=2G
+#SBATCH --cpus-per-task=2
 #SBATCH --partition=nodes
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=cyuan36@emory.edu
