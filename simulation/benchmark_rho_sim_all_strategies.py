@@ -7,7 +7,7 @@ from sklearn.metrics import precision_recall_curve, auc, f1_score
 from model import *
 from simulate import *
 
-output_dir = "output"
+output_dir = "output/mcDETECT_output/"
 os.makedirs(output_dir, exist_ok=True)
 
 import warnings
@@ -376,10 +376,10 @@ for benchmark_seed in benchmark_seeds:
         print(f"p={param} in seed {benchmark_seed} done!")
 
 results_df = pd.DataFrame(results_rows)
-results_df.to_csv(os.path.join(output_dir, "p_benchmark_multi_marker_3D_all_strategies_detailed.csv"), index=False)
-print(f"Saved: {os.path.join(output_dir, 'p_benchmark_multi_marker_3D_all_strategies_detailed.csv')}")
+results_df.to_csv(output_dir + "p_benchmark_multi_marker_3D_all_strategies_detailed.csv", index=False)
+print(f"Saved: {output_dir + 'p_benchmark_multi_marker_3D_all_strategies_detailed.csv'}")
 
 mean_df = results_df.groupby(["strategy", "param"]).agg({"num_detections": "mean", "avg_detections_per_GT": "mean", "precision": "mean", "recall": "mean", "accuracy": "mean", "f1": "mean"}).reset_index()
 mean_df.columns = ["strategy", "param", "num_detections_mean", "avg_detections_per_GT_mean", "precision_mean", "recall_mean", "accuracy_mean", "f1_mean"]
-mean_df.to_csv(os.path.join(output_dir, "p_benchmark_multi_marker_3D_all_strategies_mean.csv"), index=False)
-print(f"Saved: {os.path.join(output_dir, 'p_benchmark_multi_marker_3D_all_strategies_mean.csv')}")
+mean_df.to_csv(output_dir + "p_benchmark_multi_marker_3D_all_strategies_mean.csv", index=False)
+print(f"Saved: {output_dir + 'p_benchmark_multi_marker_3D_all_strategies_mean.csv'}")

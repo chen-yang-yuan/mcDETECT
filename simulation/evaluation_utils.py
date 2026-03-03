@@ -1,6 +1,6 @@
 """
-Shared evaluation metrics for mcDETECT and Baysor benchmarking.
-Used by main.ipynb (mcDETECT) and run_Baysor.ipynb (Baysor).
+Shared evaluation metrics for mcDETECT, Baysor, and SSAM benchmarking.
+Used by main.ipynb (mcDETECT), run_Baysor.ipynb (Baysor), and run_SSAM.py (SSAM).
 """
 import numpy as np
 from scipy.spatial import cKDTree
