@@ -9,9 +9,11 @@ from mcDETECT.model import mcDETECT
 
 # ==================== Paths and dataset ==================== #
 
-# dataset = "MERSCOPE_WT_1"
 dataset = "Xenium_5K"
-data_path = f"../../data/{dataset}/"
+if dataset.startswith("MERSCOPE"):
+    data_path = f"../../data/{dataset}/processed_data/"
+else:
+    data_path = f"../../data/{dataset}/"
 benchmark_path = "../../output/benchmark/benchmark_DBSCAN/"
 os.makedirs(benchmark_path, exist_ok=True)
 
@@ -19,17 +21,14 @@ os.makedirs(benchmark_path, exist_ok=True)
 # ==================== Load data ==================== #
 
 # Transcripts
-# transcripts = pd.read_parquet(os.path.join(data_path, "processed_data", "transcripts_small_region.parquet"))
-transcripts = pd.read_parquet(os.path.join(data_path, "transcripts_small_region.parquet"))
+transcripts = pd.read_parquet(data_path + "transcripts_small_region.parquet")
 
 # Genes (not strictly needed here but kept for completeness/consistency)
-# genes = pd.read_csv(os.path.join(data_path, "processed_data", "genes.csv"))
-genes = pd.read_csv(os.path.join(data_path, "genes.csv"))
+genes = pd.read_csv(data_path + "genes.csv")
 genes = list(genes.iloc[:, 0])
 
 # Negative control markers
-# nc_genes = pd.read_csv(os.path.join(data_path, "processed_data", "negative_controls.csv"))
-nc_genes = pd.read_csv(os.path.join(data_path, "negative_controls.csv"))
+nc_genes = pd.read_csv(data_path + "negative_controls.csv")
 nc_genes = list(nc_genes["Gene"])
 
 # Precompute NC transcripts + 3D tree once (reused across all runs)
@@ -45,7 +44,7 @@ if nc_trans.shape[0] > 0:
 else:
     NC_TREE = None
 
-# Granule marker genes (same as syn_genes in code/2_detection.py)
+# Granule marker genes
 # gnl_genes = ["Camk2a", "Cplx2", "Slc17a7", "Ddn", "Syp", "Map1a", "Shank1", "Syn1", "Gria1", "Gria2", "Cyfip2", "Vamp2", "Bsn", "Slc32a1", "Nfasc", "Syt1", "Tubb3", "Nav1", "Shank3", "Mapt"]
 gnl_genes = ["Snap25", "Camk2a", "Slc17a7", "Cyfip2", "Map2", "Syp", "Syn1", "Slc32a1", "Vamp2", "Mapt", "Gria2", "Gap43", "Tubb3", "Dlg4", "Gria1", "Bsn"]
 
