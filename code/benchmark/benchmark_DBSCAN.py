@@ -120,6 +120,7 @@ def summarize_run(granules_df, eps, minspl, scenario):
         granules_df["nc_ratio"] = nc_ratio
 
     mean_aggregate_radius = granules_df["sphere_r"].mean() if n else np.nan
+    median_aggregate_radius = granules_df["sphere_r"].median() if n else np.nan
     mean_in_soma_ratio = granules_df["in_soma_ratio"].mean() if n else np.nan
     mean_nc_ratio = nc_ratio.mean() if n else np.nan
 
@@ -130,6 +131,7 @@ def summarize_run(granules_df, eps, minspl, scenario):
         "minspl": minspl,
         "n_detections": int(n),
         "mean_aggregate_radius": float(mean_aggregate_radius) if not np.isnan(mean_aggregate_radius) else np.nan,
+        "median_aggregate_radius": float(median_aggregate_radius) if not np.isnan(median_aggregate_radius) else np.nan,
         "mean_in_soma_ratio": float(mean_in_soma_ratio) if not np.isnan(mean_in_soma_ratio) else np.nan,
         "mean_nc_ratio": float(mean_nc_ratio) if not np.isnan(mean_nc_ratio) else np.nan,
     }, granules_df
@@ -148,7 +150,7 @@ def build_configs(args):
         # Baseline configuration (current defaults)
         configs.append(("baseline", 1.5, 3))
         # Sweep eps while fixing minspl at default (3)
-        for eps_val in [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]:
+        for eps_val in [1.3, 1.4, 1.6, 1.7]:
             configs.append(("eps_sweep", eps_val, 3))
         # Sweep minspl while fixing eps at default (1.5)
         for minspl_val in [4, 5, 6]:
