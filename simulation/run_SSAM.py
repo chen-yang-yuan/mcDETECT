@@ -14,9 +14,10 @@ print("ssam:", getattr(ssam, "__version__", "unknown"))
 
 # ==================== User configurations ==================== #
 
-# Roots relative to this notebook's working directory
+# Roots relative to this script's working directory
 SIM_DATA_ROOT = "simulated_data"
-SSAM_OUT_ROOT = "ssam_outputs"
+SSAM_OUT_ROOT = "output/SSAM_output"
+os.makedirs(SSAM_OUT_ROOT, exist_ok=True)
 
 # SSAM parameters (tune once then freeze)
 DEFAULT_BANDWIDTH = 2.5
