@@ -9,7 +9,8 @@ from mcDETECT.model import mcDETECT
 
 # ==================== Paths and dataset ==================== #
 
-dataset = "MERSCOPE_WT_1"
+# dataset = "MERSCOPE_WT_1"
+dataset = "Xenium_5K"
 data_path = f"../../data/{dataset}/"
 benchmark_path = "../../output/benchmark/benchmark_DBSCAN/"
 os.makedirs(benchmark_path, exist_ok=True)
@@ -18,14 +19,17 @@ os.makedirs(benchmark_path, exist_ok=True)
 # ==================== Load data ==================== #
 
 # Transcripts
-transcripts = pd.read_parquet(os.path.join(data_path, "processed_data", "transcripts_small_region.parquet"))
+# transcripts = pd.read_parquet(os.path.join(data_path, "processed_data", "transcripts_small_region.parquet"))
+transcripts = pd.read_parquet(os.path.join(data_path, "transcripts.parquet"))
 
 # Genes (not strictly needed here but kept for completeness/consistency)
-genes = pd.read_csv(os.path.join(data_path, "processed_data", "genes.csv"))
+# genes = pd.read_csv(os.path.join(data_path, "processed_data", "genes.csv"))
+genes = pd.read_csv(os.path.join(data_path, "genes.csv"))
 genes = list(genes.iloc[:, 0])
 
 # Negative control markers
-nc_genes = pd.read_csv(os.path.join(data_path, "processed_data", "negative_controls.csv"))
+# nc_genes = pd.read_csv(os.path.join(data_path, "processed_data", "negative_controls.csv"))
+nc_genes = pd.read_csv(os.path.join(data_path, "negative_controls.csv"))
 nc_genes = list(nc_genes["Gene"])
 
 # Precompute NC transcripts + 3D tree once (reused across all runs)
@@ -42,28 +46,8 @@ else:
     NC_TREE = None
 
 # Granule marker genes (same as syn_genes in code/2_detection.py)
-gnl_genes = [
-    "Camk2a",
-    "Cplx2",
-    "Slc17a7",
-    "Ddn",
-    "Syp",
-    "Map1a",
-    "Shank1",
-    "Syn1",
-    "Gria1",
-    "Gria2",
-    "Cyfip2",
-    "Vamp2",
-    "Bsn",
-    "Slc32a1",
-    "Nfasc",
-    "Syt1",
-    "Tubb3",
-    "Nav1",
-    "Shank3",
-    "Mapt",
-]
+# gnl_genes = ["Camk2a", "Cplx2", "Slc17a7", "Ddn", "Syp", "Map1a", "Shank1", "Syn1", "Gria1", "Gria2", "Cyfip2", "Vamp2", "Bsn", "Slc32a1", "Nfasc", "Syt1", "Tubb3", "Nav1", "Shank3", "Mapt"]
+gnl_genes = ["Snap25", "Camk2a", "Slc17a7", "Cyfip2", "Map2", "Syp", "Syn1", "Slc32a1", "Vamp2", "Mapt", "Gria2", "Gap43", "Tubb3", "Dlg4", "Gria1", "Bsn"]
 
 
 # ==================== Helper functions ==================== #
@@ -98,7 +82,8 @@ def run_detection(eps, minspl):
     Downstream filters (size_thr, in_soma_thr, nc_genes) are effectively disabled.
     """
     mc = mcDETECT(
-        type="discrete",
+        # type="discrete",
+        type="continuous",
         transcripts=transcripts,
         gnl_genes=gnl_genes,
         # nc_genes=None,      # turn off negative control filtering during detection
@@ -164,10 +149,10 @@ def build_configs(args):
         # Baseline configuration (current defaults)
         configs.append(("baseline", 1.5, 3))
         # Sweep eps while fixing minspl at default (3)
-        for eps_val in [1.0, 2.0, 2.5, 3.0]:
+        for eps_val in [1.0, 1.2, 1.4, 1.6, 1.8, 2.0]:
             configs.append(("eps_sweep", eps_val, 3))
         # Sweep minspl while fixing eps at default (1.5)
-        for minspl_val in [4, 5]:
+        for minspl_val in [4, 5, 6]:
             configs.append(("minspl_sweep", 1.5, minspl_val))
     return configs
 
