@@ -38,4 +38,3 @@ export PYTHONNOUSERSITE=1
 python3 run_Baysor.py
 
 echo "Job finished at $(date)"
-
