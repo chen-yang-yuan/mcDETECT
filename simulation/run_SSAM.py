@@ -25,7 +25,7 @@ DEFAULT_SAMPLING_DISTANCE = 1.0
 DEFAULT_FIND_LOCALMAX_SEARCH_SIZE = 3
 
 # Fixed radius for SSAM "detection spheres" (SSAM outputs cell centers only; we need sphere_r for metric_main)
-SSAM_DETECTION_RADIUS = 5.0
+SSAM_DETECTION_RADIUS = 1.5
 
 # Resume: skip if ssam_spheres.parquet already exists
 RESUME_IF_DONE = True
