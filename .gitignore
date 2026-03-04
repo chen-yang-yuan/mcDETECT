@@ -12,8 +12,12 @@ output/
 # External validation
 validation/
 
-# Other analysis
-other_analysis/
+# Other analysis (except for Xenium_5K/*.py and Xenium_5K/*.sh)
+other_analysis/*
+!other_analysis/Xenium_5K/
+other_analysis/Xenium_5K/*
+!other_analysis/Xenium_5K/*.py
+!other_analysis/Xenium_5K/*.sh
 
 # Simulation related
 simulation/simulated_data/

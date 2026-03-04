@@ -11,8 +11,8 @@ sc.settings.verbosity = 0
 
 # File paths
 dataset = "Xenium_5K"
-data_path = f"../data/{dataset}/"
-output_path = f"../output/{dataset}/"
+data_path = f"../../data/{dataset}/"
+output_path = f"../../output/{dataset}/"
 
 # -------------------- Read data -------------------- #
 

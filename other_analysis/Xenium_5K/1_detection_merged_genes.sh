@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=Xenium_5K_merge_detection
+#SBATCH --job-name=Xenium_5K_detection_merged_genes
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 #SBATCH --time=240:00:00
@@ -18,7 +18,7 @@ eval "$(conda shell.bash hook)"
 conda activate mcDETECT-env
 
 # Always run from repo root so relative paths behave
-cd ~/hulab/projects/mcDETECT/code
+cd ~/hulab/projects/mcDETECT/other_analysis/Xenium_5K/
 
 # (Optional) print debugging info
 echo "Host: $(hostname)"
@@ -28,6 +28,6 @@ which python
 python --version
 
 # Run your script
-python3 Xenium_5K_merge_detection.py
+python3 1_detection_merged_genes.py
 
 echo "Job finished at $(date)"
