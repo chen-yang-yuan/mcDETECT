@@ -293,19 +293,19 @@ def run_all_ssam(
 
     return pd.DataFrame(logs)
 
-# logs_df = run_all_ssam(
-#     inputs_df=inputs_df,
-#     sim_root=SIM_DATA_ROOT,
-#     out_root=SSAM_OUT_ROOT,
-#     bandwidth=DEFAULT_BANDWIDTH,
-#     sampling_distance=DEFAULT_SAMPLING_DISTANCE,
-#     search_size=DEFAULT_FIND_LOCALMAX_SEARCH_SIZE,
-#     detection_radius=SSAM_DETECTION_RADIUS,
-#     resume_if_done=RESUME_IF_DONE,
-#     limit_n=LIMIT_N,
-# )
+logs_df = run_all_ssam(
+    inputs_df=inputs_df,
+    sim_root=SIM_DATA_ROOT,
+    out_root=SSAM_OUT_ROOT,
+    bandwidth=DEFAULT_BANDWIDTH,
+    sampling_distance=DEFAULT_SAMPLING_DISTANCE,
+    search_size=DEFAULT_FIND_LOCALMAX_SEARCH_SIZE,
+    detection_radius=SSAM_DETECTION_RADIUS,
+    resume_if_done=RESUME_IF_DONE,
+    limit_n=LIMIT_N,
+)
 
-# logs_df["status"].value_counts()
+logs_df["status"].value_counts()
 
 # # ==================== Save logs and create index for evaluation ==================== #
 
