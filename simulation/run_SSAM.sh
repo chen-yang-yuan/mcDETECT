@@ -12,8 +12,8 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+# Always run from the simulation directory in your project
+cd ~/hulab/projects/mcDETECT/simulation
 
 # ---------- Single-job modes ----------
 
