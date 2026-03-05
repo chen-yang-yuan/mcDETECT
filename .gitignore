@@ -13,7 +13,11 @@ output/
 validation/
 
 # Other analysis
-other_analysis/
+other_analysis/*
+!other_analysis/Xenium_5K/
+other_analysis/Xenium_5K/*
+!other_analysis/Xenium_5K/1_detection_merged_genes.py
+!other_analysis/Xenium_5K/1_detection_merged_genes.sh
 
 # Simulation related
 simulation/simulated_data/
