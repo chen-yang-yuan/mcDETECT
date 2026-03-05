@@ -35,6 +35,15 @@ BAYSOR_3D_ONLY = True
 
 PROGRESS_EVERY_N_SEEDS = 10
 
+# Debug: optionally run on a small subset first (e.g. 10 seeds of single_marker 3D A)
+DEBUG_SAMPLE = True
+DEBUG_MODE = {
+    "mode": "single_marker",
+    "dimension": "3D",
+    "scenario": "A",
+    "n": 10,
+}
+
 # How to invoke Baysor on HGCC:
 # - By default, we call "baysor" and expect it to be on PATH inside baysor_env.
 # - Alternatively, set environment variable BAYSOR_BINARY to a full path, e.g.
@@ -106,6 +115,26 @@ if BAYSOR_3D_ONLY:
 else:
     print("Total simulations found:", inputs_df.shape[0])
 print(inputs_df.head())
+
+# Optional debug subset: limit to a small slice (default: 10 seeds of single_marker 3D A)
+if DEBUG_SAMPLE:
+    mask = (
+        (inputs_df["mode"] == DEBUG_MODE["mode"])
+        & (inputs_df["dimension"] == DEBUG_MODE["dimension"])
+        & (inputs_df["scenario"] == DEBUG_MODE["scenario"])
+    )
+    inputs_df = (
+        inputs_df[mask]
+        .head(int(DEBUG_MODE.get("n", 10)))
+        .copy()
+        .reset_index(drop=True)
+    )
+    print(
+        "DEBUG_SAMPLE enabled – running only on",
+        f"{inputs_df.shape[0]} rows from",
+        f"{DEBUG_MODE['mode']} {DEBUG_MODE['dimension']} {DEBUG_MODE['scenario']}",
+    )
+    print(inputs_df)
 
 
 # ==================== Convert simulated parquet → Baysor molecule table ==================== #
@@ -359,186 +388,186 @@ def run_all_baysor(
     return pd.DataFrame(logs)
 
 
-logs_df = run_all_baysor(
-    inputs_df=inputs_df,
-    sim_root=SIM_DATA_ROOT,
-    out_root=BAYSOR_OUT_ROOT,
-    min_mols=DEFAULT_MIN_MOLS,
-    scale=DEFAULT_SCALE,
-    threads=DEFAULT_THREADS,
-    resume_if_done=RESUME_IF_DONE,
-    limit_n=LIMIT_N,
-)
+# logs_df = run_all_baysor(
+#     inputs_df=inputs_df,
+#     sim_root=SIM_DATA_ROOT,
+#     out_root=BAYSOR_OUT_ROOT,
+#     min_mols=DEFAULT_MIN_MOLS,
+#     scale=DEFAULT_SCALE,
+#     threads=DEFAULT_THREADS,
+#     resume_if_done=RESUME_IF_DONE,
+#     limit_n=LIMIT_N,
+# )
 
-print("Status counts:", logs_df["status"].value_counts().to_dict())
-
-
-# ==================== Save logs and create index for evaluation ==================== #
-
-Path(BAYSOR_OUT_ROOT).mkdir(parents=True, exist_ok=True)
-log_path = os.path.join(BAYSOR_OUT_ROOT, "baysor_run_log.csv")
-logs_df.to_csv(log_path, index=False)
-print("Saved log:", log_path)
-
-index_df = logs_df[logs_df["status"].isin(["ok", "skipped_exists"])][
-    ["mode", "dimension", "scenario", "seed", "spheres_parquet", "out_dir"]
-].copy()
-index_path = os.path.join(BAYSOR_OUT_ROOT, "baysor_spheres_index.csv")
-index_df.to_csv(index_path, index=False)
-print("Saved index:", index_path)
-print(index_df.head())
+# print("Status counts:", logs_df["status"].value_counts().to_dict())
 
 
-# ==================== Evaluation: ground truth and metrics ==================== #
+# # ==================== Save logs and create index for evaluation ==================== #
 
-def get_ground_truth_single(dimension: str, scenario: str, seed: int):
-    """Load single-marker ground-truth parents from Parquet and build KD-tree."""
-    gt_path = os.path.join(
-        SIM_DATA_ROOT,
-        "single_marker",
-        dimension,
-        scenario,
-        f"seed_{seed}_ground_truth.parquet",
-    )
-    if not os.path.exists(gt_path):
-        raise FileNotFoundError(f"Ground-truth file not found: {gt_path}")
-    parents_all = pd.read_parquet(gt_path)
-    tree = make_tree(
-        d1=np.array(parents_all["x"]),
-        d2=np.array(parents_all["y"]),
-        d3=np.array(parents_all["z"]),
-    )
-    return parents_all, tree
+# Path(BAYSOR_OUT_ROOT).mkdir(parents=True, exist_ok=True)
+# log_path = os.path.join(BAYSOR_OUT_ROOT, "baysor_run_log.csv")
+# logs_df.to_csv(log_path, index=False)
+# print("Saved log:", log_path)
+
+# index_df = logs_df[logs_df["status"].isin(["ok", "skipped_exists"])][
+#     ["mode", "dimension", "scenario", "seed", "spheres_parquet", "out_dir"]
+# ].copy()
+# index_path = os.path.join(BAYSOR_OUT_ROOT, "baysor_spheres_index.csv")
+# index_df.to_csv(index_path, index=False)
+# print("Saved index:", index_path)
+# print(index_df.head())
 
 
-def get_ground_truth_multi(dimension: str, seed: int):
-    """Load multi-marker ground-truth parents from Parquet (scenario 'all') and build KD-tree."""
-    gt_path = os.path.join(
-        SIM_DATA_ROOT,
-        "multi_marker",
-        dimension,
-        "all",
-        f"seed_{seed}_ground_truth.parquet",
-    )
-    if not os.path.exists(gt_path):
-        raise FileNotFoundError(f"Ground-truth file not found: {gt_path}")
-    parents_all = pd.read_parquet(gt_path)
-    tree = make_tree(
-        d1=np.array(parents_all["x"]),
-        d2=np.array(parents_all["y"]),
-        d3=np.array(parents_all["z"]),
-    )
-    return parents_all, tree
+# # ==================== Evaluation: ground truth and metrics ==================== #
+
+# def get_ground_truth_single(dimension: str, scenario: str, seed: int):
+#     """Load single-marker ground-truth parents from Parquet and build KD-tree."""
+#     gt_path = os.path.join(
+#         SIM_DATA_ROOT,
+#         "single_marker",
+#         dimension,
+#         scenario,
+#         f"seed_{seed}_ground_truth.parquet",
+#     )
+#     if not os.path.exists(gt_path):
+#         raise FileNotFoundError(f"Ground-truth file not found: {gt_path}")
+#     parents_all = pd.read_parquet(gt_path)
+#     tree = make_tree(
+#         d1=np.array(parents_all["x"]),
+#         d2=np.array(parents_all["y"]),
+#         d3=np.array(parents_all["z"]),
+#     )
+#     return parents_all, tree
 
 
-# Same constants as main.ipynb / run_SSAM.py (for naming)
-POINT_TYPE = ["CSR", "Extranuclear", "Intranuclear"]
-RATIO = [0.5, 0.25, 0.25]
-MEAN_DIST_EXTRA = 1
-MEAN_DIST_INTRA = 4
-BETA_EXTRA = (1, 19)
-BETA_INTRA = (19, 1)
-MARKER_SETTINGS = {
-    "A": {"density": 0.08, "num_clusters_extra": 5000, "num_clusters_intra": 2000},
-    "B": {"density": 0.04, "num_clusters_extra": 3000, "num_clusters_intra": 1200},
-    "C": {"density": 0.02, "num_clusters_extra": 2000, "num_clusters_intra": 800},
-}
-SHAPE = (2000, 2000)
-LAYER_NUM = 8
-LAYER_GAP = 1.5
-NAME_MULTI = ["A", "B", "C"]
-CSR_DENSITY = [0.04, 0.02, 0.01]
-EXTRA_DENSITY = [0.02, 0.01, 0.005]
-EXTRA_NUM_CLUSTERS = 5000
-EXTRA_BETA = (1, 19)
-EXTRA_COMP_PROB = [0.4, 0.3, 0.3]
-EXTRA_MEAN_DIST = 1
-INTRA_DENSITY = [0.02, 0.01, 0.005]
-INTRA_NUM_CLUSTERS = 1000
-INTRA_BETA = (19, 1)
-INTRA_COMP_PROB = [0.8, 0.1, 0.1]
-INTRA_MEAN_DIST = 4
-INTRA_COMP_THR = 2
-EXTRA_COMP_THR = 2
+# def get_ground_truth_multi(dimension: str, seed: int):
+#     """Load multi-marker ground-truth parents from Parquet (scenario 'all') and build KD-tree."""
+#     gt_path = os.path.join(
+#         SIM_DATA_ROOT,
+#         "multi_marker",
+#         dimension,
+#         "all",
+#         f"seed_{seed}_ground_truth.parquet",
+#     )
+#     if not os.path.exists(gt_path):
+#         raise FileNotFoundError(f"Ground-truth file not found: {gt_path}")
+#     parents_all = pd.read_parquet(gt_path)
+#     tree = make_tree(
+#         d1=np.array(parents_all["x"]),
+#         d2=np.array(parents_all["y"]),
+#         d3=np.array(parents_all["z"]),
+#     )
+#     return parents_all, tree
 
-EVAL_OUT_DIR = BAYSOR_OUT_ROOT
-Path(EVAL_OUT_DIR).mkdir(parents=True, exist_ok=True)
 
-single_results: list[tuple] = []
-multi_results: list[tuple] = []
+# # Same constants as main.ipynb / run_SSAM.py (for naming)
+# POINT_TYPE = ["CSR", "Extranuclear", "Intranuclear"]
+# RATIO = [0.5, 0.25, 0.25]
+# MEAN_DIST_EXTRA = 1
+# MEAN_DIST_INTRA = 4
+# BETA_EXTRA = (1, 19)
+# BETA_INTRA = (19, 1)
+# MARKER_SETTINGS = {
+#     "A": {"density": 0.08, "num_clusters_extra": 5000, "num_clusters_intra": 2000},
+#     "B": {"density": 0.04, "num_clusters_extra": 3000, "num_clusters_intra": 1200},
+#     "C": {"density": 0.02, "num_clusters_extra": 2000, "num_clusters_intra": 800},
+# }
+# SHAPE = (2000, 2000)
+# LAYER_NUM = 8
+# LAYER_GAP = 1.5
+# NAME_MULTI = ["A", "B", "C"]
+# CSR_DENSITY = [0.04, 0.02, 0.01]
+# EXTRA_DENSITY = [0.02, 0.01, 0.005]
+# EXTRA_NUM_CLUSTERS = 5000
+# EXTRA_BETA = (1, 19)
+# EXTRA_COMP_PROB = [0.4, 0.3, 0.3]
+# EXTRA_MEAN_DIST = 1
+# INTRA_DENSITY = [0.02, 0.01, 0.005]
+# INTRA_NUM_CLUSTERS = 1000
+# INTRA_BETA = (19, 1)
+# INTRA_COMP_PROB = [0.8, 0.1, 0.1]
+# INTRA_MEAN_DIST = 4
+# INTRA_COMP_THR = 2
+# EXTRA_COMP_THR = 2
 
-for _, row in index_df.iterrows():
-    mode = row["mode"]
-    dimension = row["dimension"]
-    scenario = row["scenario"]
-    seed = row["seed"]
-    spheres_parquet = row["spheres_parquet"]
-    if not os.path.exists(spheres_parquet):
-        continue
-    sphere = pd.read_parquet(spheres_parquet)
-    if sphere.shape[0] == 0:
-        if mode == "single_marker":
-            single_results.append((dimension, scenario, seed, 0.0, 0.0, 0.0, 0.0))
-        else:
-            multi_results.append((dimension, seed, 0.0, 0.0, 0.0, 0.0))
-        continue
-    try:
-        if mode == "single_marker":
-            parents_all, tree = get_ground_truth_single(dimension, scenario, seed)
-        else:
-            parents_all, tree = get_ground_truth_multi(dimension, seed)
-        ground_truth_indices = set(parents_all.index)
-        precision, recall, accuracy, f1 = metric_main(tree, ground_truth_indices, sphere)
-        if mode == "single_marker":
-            single_results.append((dimension, scenario, seed, precision, recall, accuracy, f1))
-        else:
-            multi_results.append((dimension, seed, precision, recall, accuracy, f1))
-    except Exception as e:
-        print(f"Error evaluating {spheres_parquet}: {e}")
-        if mode == "single_marker":
-            single_results.append((dimension, scenario, seed, np.nan, np.nan, np.nan, np.nan))
-        else:
-            multi_results.append((dimension, seed, np.nan, np.nan, np.nan, np.nan))
+# EVAL_OUT_DIR = BAYSOR_OUT_ROOT
+# Path(EVAL_OUT_DIR).mkdir(parents=True, exist_ok=True)
 
-print("Single-marker results:", len(single_results))
-print("Multi-marker results:", len(multi_results))
+# single_results: list[tuple] = []
+# multi_results: list[tuple] = []
 
-for (dimension, scenario) in set((r[0], r[1]) for r in single_results):
-    rows = [r for r in single_results if r[0] == dimension and r[1] == scenario]
-    rows.sort(key=lambda x: x[2])
-    extra = MARKER_SETTINGS[scenario]["num_clusters_extra"]
-    intra = MARKER_SETTINGS[scenario]["num_clusters_intra"]
-    df = pd.DataFrame(
-        {
-            "Simulation": [r[2] for r in rows],
-            "Precision": [r[3] for r in rows],
-            "Recall": [r[4] for r in rows],
-            "Accuracy": [r[5] for r in rows],
-            "F1 Score": [r[6] for r in rows],
-        }
-    )
-    path = os.path.join(
-        EVAL_OUT_DIR,
-        f"single_marker_{dimension}_{scenario}_{extra}_{intra}_baysor.csv",
-    )
-    df.to_csv(path, index=False)
-    print("Saved:", path)
+# for _, row in index_df.iterrows():
+#     mode = row["mode"]
+#     dimension = row["dimension"]
+#     scenario = row["scenario"]
+#     seed = row["seed"]
+#     spheres_parquet = row["spheres_parquet"]
+#     if not os.path.exists(spheres_parquet):
+#         continue
+#     sphere = pd.read_parquet(spheres_parquet)
+#     if sphere.shape[0] == 0:
+#         if mode == "single_marker":
+#             single_results.append((dimension, scenario, seed, 0.0, 0.0, 0.0, 0.0))
+#         else:
+#             multi_results.append((dimension, seed, 0.0, 0.0, 0.0, 0.0))
+#         continue
+#     try:
+#         if mode == "single_marker":
+#             parents_all, tree = get_ground_truth_single(dimension, scenario, seed)
+#         else:
+#             parents_all, tree = get_ground_truth_multi(dimension, seed)
+#         ground_truth_indices = set(parents_all.index)
+#         precision, recall, accuracy, f1 = metric_main(tree, ground_truth_indices, sphere)
+#         if mode == "single_marker":
+#             single_results.append((dimension, scenario, seed, precision, recall, accuracy, f1))
+#         else:
+#             multi_results.append((dimension, seed, precision, recall, accuracy, f1))
+#     except Exception as e:
+#         print(f"Error evaluating {spheres_parquet}: {e}")
+#         if mode == "single_marker":
+#             single_results.append((dimension, scenario, seed, np.nan, np.nan, np.nan, np.nan))
+#         else:
+#             multi_results.append((dimension, seed, np.nan, np.nan, np.nan, np.nan))
 
-for dimension in set(r[0] for r in multi_results):
-    rows = [r for r in multi_results if r[0] == dimension]
-    rows.sort(key=lambda x: x[1])
-    df = pd.DataFrame(
-        {
-            "Simulation": [r[1] for r in rows],
-            "Precision": [r[2] for r in rows],
-            "Recall": [r[3] for r in rows],
-            "Accuracy": [r[4] for r in rows],
-            "F1": [r[5] for r in rows],
-        }
-    )
-    path = os.path.join(
-        EVAL_OUT_DIR,
-        f"multi_marker_{dimension}_all_{EXTRA_NUM_CLUSTERS}_{INTRA_NUM_CLUSTERS}_baysor.csv",
-    )
-    df.to_csv(path, index=False)
-    print("Saved:", path)
+# print("Single-marker results:", len(single_results))
+# print("Multi-marker results:", len(multi_results))
+
+# for (dimension, scenario) in set((r[0], r[1]) for r in single_results):
+#     rows = [r for r in single_results if r[0] == dimension and r[1] == scenario]
+#     rows.sort(key=lambda x: x[2])
+#     extra = MARKER_SETTINGS[scenario]["num_clusters_extra"]
+#     intra = MARKER_SETTINGS[scenario]["num_clusters_intra"]
+#     df = pd.DataFrame(
+#         {
+#             "Simulation": [r[2] for r in rows],
+#             "Precision": [r[3] for r in rows],
+#             "Recall": [r[4] for r in rows],
+#             "Accuracy": [r[5] for r in rows],
+#             "F1 Score": [r[6] for r in rows],
+#         }
+#     )
+#     path = os.path.join(
+#         EVAL_OUT_DIR,
+#         f"single_marker_{dimension}_{scenario}_{extra}_{intra}_baysor.csv",
+#     )
+#     df.to_csv(path, index=False)
+#     print("Saved:", path)
+
+# for dimension in set(r[0] for r in multi_results):
+#     rows = [r for r in multi_results if r[0] == dimension]
+#     rows.sort(key=lambda x: x[1])
+#     df = pd.DataFrame(
+#         {
+#             "Simulation": [r[1] for r in rows],
+#             "Precision": [r[2] for r in rows],
+#             "Recall": [r[3] for r in rows],
+#             "Accuracy": [r[4] for r in rows],
+#             "F1": [r[5] for r in rows],
+#         }
+#     )
+#     path = os.path.join(
+#         EVAL_OUT_DIR,
+#         f"multi_marker_{dimension}_all_{EXTRA_NUM_CLUSTERS}_{INTRA_NUM_CLUSTERS}_baysor.csv",
+#     )
+#     df.to_csv(path, index=False)
+#     print("Saved:", path)
