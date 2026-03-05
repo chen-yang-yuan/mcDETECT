@@ -307,21 +307,21 @@ logs_df = run_all_ssam(
 
 logs_df["status"].value_counts()
 
-# # ==================== Save logs and create index for evaluation ==================== #
+# ==================== Save logs and create index for evaluation ==================== #
 
-# Path(SSAM_OUT_ROOT).mkdir(parents=True, exist_ok=True)
-# log_path = os.path.join(SSAM_OUT_ROOT, "ssam_run_log.csv")
-# logs_df.to_csv(log_path, index=False)
-# print("Saved log:", log_path)
+Path(SSAM_OUT_ROOT).mkdir(parents=True, exist_ok=True)
+log_path = os.path.join(SSAM_OUT_ROOT, "ssam_run_log.csv")
+logs_df.to_csv(log_path, index=False)
+print("Saved log:", log_path)
 
-# index_df = logs_df[logs_df["status"].isin(["ok", "skipped_exists"])][
-#     ["mode", "dimension", "scenario", "seed", "spheres_parquet", "out_dir"]
-# ].copy()
-# index_path = os.path.join(SSAM_OUT_ROOT, "ssam_spheres_index.csv")
-# index_df.to_csv(index_path, index=False)
-# print("Saved index:", index_path)
-# print("\nStatus counts:", logs_df["status"].value_counts().to_dict())
-# print(index_df.head())
+index_df = logs_df[logs_df["status"].isin(["ok", "skipped_exists"])][
+    ["mode", "dimension", "scenario", "seed", "spheres_parquet", "out_dir"]
+].copy()
+index_path = os.path.join(SSAM_OUT_ROOT, "ssam_spheres_index.csv")
+index_df.to_csv(index_path, index=False)
+print("Saved index:", index_path)
+print("\nStatus counts:", logs_df["status"].value_counts().to_dict())
+print(index_df.head())
 
 # # ==================== Evaluation: ground truth and metrics ==================== #
 
