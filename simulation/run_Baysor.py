@@ -1,6 +1,7 @@
 import glob
 import os
 import re
+import subprocess
 import tempfile
 import time
 from pathlib import Path
@@ -224,8 +225,19 @@ def run_baysor_cli(
     cmd += ["-o", str(out_dir_path)]
 
     print("    Baysor command:", " ".join(cmd))
-    subprocess = __import__("subprocess")
-    subprocess.run(cmd, check=True, env=env, timeout=timeout_sec)
+    result = subprocess.run(
+        cmd,
+        env=env,
+        timeout=timeout_sec,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        err_msg = (
+            f"Baysor exited with code {result.returncode}. "
+            f"stderr: {result.stderr or '(empty)'}. stdout: {result.stdout or '(empty)'}"
+        )
+        raise RuntimeError(err_msg)
 
     seg_csv = out_dir_path / "segmentation.csv"
     if not seg_csv.exists():
