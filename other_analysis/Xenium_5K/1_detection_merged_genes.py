@@ -1,5 +1,6 @@
 import pandas as pd
 import scanpy as sc
+from scipy.sparse import csr_matrix
 from scipy.spatial import cKDTree
 
 from mcDETECT.utils import *
@@ -61,4 +62,17 @@ granules["brain_area"] = labels_df.loc[nn_idx, "brain_area"].to_numpy()
 granules.head()
 
 # Save granules
-granules.to_parquet(output_path + "granules_merged_genes_minspl_4.parquet")
+granules.to_parquet(output_path + f"granules_merged_genes_minspl_{mc.minspl}.parquet")
+
+# -------------------- Granule expression profiling -------------------- #
+
+granule_adata = mc.profile(granules, genes = genes)
+granule_adata.layers["counts"] = csr_matrix(granule_adata.X.copy())
+
+sc.pp.normalize_total(granule_adata, target_sum=1e4)
+sc.pp.log1p(granule_adata)
+sc.tl.pca(granule_adata, n_comps=10, svd_solver="auto")
+sc.tl.tsne(granule_adata, n_pcs=10)
+
+granule_adata.write_h5ad(output_path + f"granule_adata_tsne_merged_genes_minspl_{mc.minspl}.h5ad")
+print("Granule adata: ", granule_adata)
