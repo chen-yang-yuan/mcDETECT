@@ -232,19 +232,20 @@ def run_baysor_cli(
         capture_output=True,
         text=True,
     )
+    seg_csv = out_dir_path / "segmentation.csv"
+    if seg_csv.exists():
+        # Baysor sometimes returns exit code 1 even when it completes successfully
+        # (e.g. progress-bar or non-interactive quirks). Treat output presence as success.
+        return str(seg_csv)
     if result.returncode != 0:
         err_msg = (
             f"Baysor exited with code {result.returncode}. "
             f"stderr: {result.stderr or '(empty)'}. stdout: {result.stdout or '(empty)'}"
         )
         raise RuntimeError(err_msg)
-
-    seg_csv = out_dir_path / "segmentation.csv"
-    if not seg_csv.exists():
-        raise FileNotFoundError(
-            f"Expected {seg_csv} not found. Files in {out_dir_path}: {list(out_dir_path.glob('*'))}"
-        )
-    return str(seg_csv)
+    raise FileNotFoundError(
+        f"Expected {seg_csv} not found. Files in {out_dir_path}: {list(out_dir_path.glob('*'))}"
+    )
 
 
 def baysor_segmentation_to_spheres(
