@@ -37,12 +37,19 @@ BAYSOR_3D_ONLY = True
 PROGRESS_EVERY_N_SEEDS = 10
 
 # Debug: optionally run on a small subset first (e.g. 10 seeds of single_marker 3D A)
+# DEBUG_SAMPLE = True
+# DEBUG_MODE = {
+#     "mode": "single_marker",
+#     "dimension": "3D",
+#     "scenario": "A",
+#     "n": 10,
+# }
 DEBUG_SAMPLE = True
 DEBUG_MODE = {
-    "mode": "single_marker",
+    "mode": "multi_marker",
     "dimension": "3D",
-    "scenario": "A",
-    "n": 10,
+    "scenario": "all",
+    "n": 3,
 }
 
 # How to invoke Baysor on HGCC:
