@@ -10,8 +10,19 @@ import miniball
 import numpy as np
 import pandas as pd
 
-from evaluation_utils import make_tree, metric_main
+from evaluation_utils import make_tree, metric_main, metric_main_polygons
 
+
+# ==================== POLYGON vs SPHERE approach (switch here) ==================== #
+# To use Baysor polygons (segmentation_polygons_3d.json) for evaluation:
+#   - Set USE_POLYGONS = True below.
+#   - In "Main loop" (run_all_baysor): the POLYGON branch is active; SPHERE branch is commented.
+#   - In "Evaluation" section: the POLYGON branch (metric_main_polygons) is active; SPHERE branch is commented.
+# To use minimum enclosing spheres again:
+#   - Set USE_POLYGONS = False.
+#   - In run_all_baysor: uncomment the SPHERE branch and comment the POLYGON branch.
+#   - In Evaluation: uncomment the SPHERE branch and comment the POLYGON branch.
+USE_POLYGONS = True
 
 # ==================== User configurations ==================== #
 
@@ -22,7 +33,7 @@ os.makedirs(BAYSOR_OUT_ROOT, exist_ok=True)
 
 # Baysor parameters (tune once then freeze)
 DEFAULT_MIN_MOLS = 20
-DEFAULT_SCALE = 1.5     # previously 3.0
+DEFAULT_SCALE = 3.0
 DEFAULT_THREADS = 16
 
 # Resume logic: skip if baysor_spheres.parquet already exists
@@ -183,12 +194,17 @@ def simulated_to_baysor_table(sim_parquet: str, is_3d: bool) -> pd.DataFrame:
 
 # ==================== Output path mapping (mirror directory layout) ==================== #
 
+# Baysor 3D polygon output (when USE_POLYGONS=True we use this for evaluation)
+BAYSOR_POLYGONS_JSON = "segmentation_polygons_3d.json"
+
+
 def make_baysor_out_paths(sim_parquet: str, sim_root: str, out_root: str):
     rel = os.path.relpath(sim_parquet, sim_root)
     rel_no_ext = os.path.splitext(rel)[0]
     out_dir = os.path.join(out_root, rel_no_ext)
     spheres_parquet = os.path.join(out_dir, "baysor_spheres.parquet")
-    return out_dir, spheres_parquet
+    polygons_json = os.path.join(out_dir, BAYSOR_POLYGONS_JSON)
+    return out_dir, spheres_parquet, polygons_json
 
 
 # ==================== Run Baysor CLI and convert to detection spheres ==================== #
@@ -255,6 +271,47 @@ def run_baysor_cli(
     )
 
 
+# ==================== Polygon-based detection (used when USE_POLYGONS=True) ==================== #
+
+def _parse_z_range(z_key: str):
+    """Parse Baysor z-slice key like '[-35.14, 0.89)' into (z_lo, z_hi)."""
+    import re
+    m = re.match(r"\[\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*\)", z_key.strip())
+    if not m:
+        raise ValueError(f"Invalid z range key: {z_key!r}")
+    return float(m.group(1)), float(m.group(2))
+
+
+def load_baysor_polygons_3d(json_path: str):
+    """
+    Load Baysor segmentation_polygons_3d.json and return a list of cells suitable for
+    metric_main_polygons. Each cell is a list of (z_lo, z_hi, ring) where ring is a list
+    of [x, y] (exterior boundary). Keys in the JSON are z-intervals; features are
+    GeoJSON Polygon features with id (cell id).
+    """
+    import json
+    with open(json_path) as f:
+        data = json.load(f)
+    # Group by feature id (cell id) across z-slices: cell_id -> [(z_lo, z_hi, ring), ...]
+    by_cell = {}
+    for z_key, obj in data.items():
+        z_lo, z_hi = _parse_z_range(z_key)
+        for feat in obj.get("features", []):
+            geom = feat.get("geometry")
+            fid = feat.get("id", "")
+            if not geom or geom.get("type") != "Polygon":
+                continue
+            coords = geom.get("coordinates")
+            if not coords or not coords[0]:
+                continue
+            ring = [[float(p[0]), float(p[1])] for p in coords[0]]
+            if len(ring) < 3:
+                continue
+            by_cell.setdefault(fid, []).append((z_lo, z_hi, ring))
+    return list(by_cell.values())
+
+
+# ==================== Sphere-based detection (used when USE_POLYGONS=False) ==================== #
 # def baysor_segmentation_to_spheres(
 #     seg_csv: str,
 #     baysor_input_csv: str,
@@ -383,23 +440,45 @@ def run_all_baysor(
     for _, row in df.iterrows():
         sim_parquet = row["input_parquet"]
         is_3d = bool(row["is_3d"])
-        out_dir, spheres_parquet = make_baysor_out_paths(sim_parquet, sim_root, out_root)
+        out_dir, spheres_parquet, polygons_json = make_baysor_out_paths(sim_parquet, sim_root, out_root)
 
-        if resume_if_done and os.path.exists(spheres_parquet):
-            n_spheres = pd.read_parquet(spheres_parquet).shape[0]
-            logs.append(
-                {
-                    **row.to_dict(),
-                    "status": "skipped_exists",
-                    "out_dir": out_dir,
-                    "spheres_parquet": spheres_parquet,
-                    "n_spheres": n_spheres,
-                    "runtime_sec": 0.0,
-                    "error": None,
-                }
-            )
-            _maybe_print(row)
-            continue
+        # Resume: POLYGON path checks for segmentation_polygons_3d.json; SPHERE path checks for baysor_spheres.parquet
+        if USE_POLYGONS:
+            if resume_if_done and os.path.exists(polygons_json):
+                cells = load_baysor_polygons_3d(polygons_json)
+                logs.append(
+                    {
+                        **row.to_dict(),
+                        "status": "skipped_exists",
+                        "out_dir": out_dir,
+                        "spheres_parquet": spheres_parquet,
+                        "detection_type": "polygons",
+                        "detection_path": polygons_json,
+                        "n_spheres": len(cells),
+                        "runtime_sec": 0.0,
+                        "error": None,
+                    }
+                )
+                _maybe_print(row)
+                continue
+        else:
+            if resume_if_done and os.path.exists(spheres_parquet):
+                n_spheres = pd.read_parquet(spheres_parquet).shape[0]
+                logs.append(
+                    {
+                        **row.to_dict(),
+                        "status": "skipped_exists",
+                        "out_dir": out_dir,
+                        "spheres_parquet": spheres_parquet,
+                        "detection_type": "spheres",
+                        "detection_path": spheres_parquet,
+                        "n_spheres": n_spheres,
+                        "runtime_sec": 0.0,
+                        "error": None,
+                    }
+                )
+                _maybe_print(row)
+                continue
 
         t0 = time.time()
         print(
@@ -424,17 +503,32 @@ def run_all_baysor(
                     make_plots=False,
                 )
 
-                # spheres = baysor_segmentation_to_spheres(seg_csv, in_csv)
-                spheres = baysor_segmentation_to_spheres(seg_csv)
+                if USE_POLYGONS:
+                    # -------- POLYGON approach: use segmentation_polygons_3d.json for evaluation --------
+                    if not os.path.exists(polygons_json):
+                        raise FileNotFoundError(
+                            f"USE_POLYGONS=True but {BAYSOR_POLYGONS_JSON} not found in {out_dir}"
+                        )
+                    cells = load_baysor_polygons_3d(polygons_json)
+                    detection_type, detection_path = "polygons", polygons_json
+                    n_detections = len(cells)
+                else:
+                    # -------- SPHERE approach: miniball enclosing spheres from segmentation.csv --------
+                    # spheres = baysor_segmentation_to_spheres(seg_csv, in_csv)  # older signature
+                    spheres = baysor_segmentation_to_spheres(seg_csv)
+                    spheres.to_parquet(spheres_parquet, index=False)
+                    detection_type, detection_path = "spheres", spheres_parquet
+                    n_detections = int(spheres.shape[0])
 
-            spheres.to_parquet(spheres_parquet, index=False)
             logs.append(
                 {
                     **row.to_dict(),
                     "status": "ok",
                     "out_dir": out_dir,
                     "spheres_parquet": spheres_parquet,
-                    "n_spheres": int(spheres.shape[0]),
+                    "detection_type": detection_type,
+                    "detection_path": detection_path,
+                    "n_spheres": n_detections,
                     "runtime_sec": float(time.time() - t0),
                     "error": None,
                 }
@@ -447,6 +541,8 @@ def run_all_baysor(
                     "status": "failed",
                     "out_dir": out_dir,
                     "spheres_parquet": spheres_parquet,
+                    "detection_type": "spheres" if not USE_POLYGONS else "polygons",
+                    "detection_path": spheres_parquet if not USE_POLYGONS else polygons_json,
                     "n_spheres": None,
                     "runtime_sec": float(time.time() - t0),
                     "error": repr(e),
@@ -479,15 +575,21 @@ logs_df.to_csv(log_path, index=False)
 print("Saved log:", log_path)
 
 index_df = logs_df[logs_df["status"].isin(["ok", "skipped_exists"])][
-    ["mode", "dimension", "scenario", "seed", "spheres_parquet", "out_dir"]
+    ["mode", "dimension", "scenario", "seed", "spheres_parquet", "out_dir", "detection_type", "detection_path"]
 ].copy()
-index_path = os.path.join(BAYSOR_OUT_ROOT, "baysor_spheres_index.csv")
+index_path = os.path.join(
+    BAYSOR_OUT_ROOT,
+    "baysor_polygons_index.csv" if USE_POLYGONS else "baysor_spheres_index.csv",
+)
 index_df.to_csv(index_path, index=False)
 print("Saved index:", index_path)
 print(index_df.head())
 
 
 # ==================== Evaluation: ground truth and metrics ==================== #
+# When USE_POLYGONS=True: the loop below uses detection_type to call either
+# metric_main_polygons (polygons) or metric_main (spheres). No need to comment/uncomment here;
+# switch via USE_POLYGONS at the top of the file.
 
 def get_ground_truth_single(dimension: str, scenario: str, seed: int):
     """Load single-marker ground-truth parents from Parquet and build KD-tree."""
@@ -570,15 +672,9 @@ for _, row in index_df.iterrows():
     dimension = row["dimension"]
     scenario = row["scenario"]
     seed = row["seed"]
-    spheres_parquet = row["spheres_parquet"]
-    if not os.path.exists(spheres_parquet):
-        continue
-    sphere = pd.read_parquet(spheres_parquet)
-    if sphere.shape[0] == 0:
-        if mode == "single_marker":
-            single_results.append((dimension, scenario, seed, 0.0, 0.0, 0.0, 0.0))
-        else:
-            multi_results.append((dimension, seed, 0.0, 0.0, 0.0, 0.0))
+    detection_path = row["detection_path"]
+    detection_type = row["detection_type"]
+    if not os.path.exists(detection_path):
         continue
     try:
         if mode == "single_marker":
@@ -586,13 +682,36 @@ for _, row in index_df.iterrows():
         else:
             parents_all, tree = get_ground_truth_multi(dimension, seed)
         ground_truth_indices = set(parents_all.index)
-        precision, recall, accuracy, f1 = metric_main(tree, ground_truth_indices, sphere)
+
+        if detection_type == "polygons":
+            # -------- POLYGON approach: point-in-polygon matching --------
+            cells_polygons = load_baysor_polygons_3d(detection_path)
+            if len(cells_polygons) == 0:
+                if mode == "single_marker":
+                    single_results.append((dimension, scenario, seed, 0.0, 0.0, 0.0, 0.0))
+                else:
+                    multi_results.append((dimension, seed, 0.0, 0.0, 0.0, 0.0))
+                continue
+            precision, recall, accuracy, f1 = metric_main_polygons(
+                parents_all, ground_truth_indices, cells_polygons
+            )
+        else:
+            # -------- SPHERE approach: point-in-sphere matching --------
+            sphere = pd.read_parquet(detection_path)
+            if sphere.shape[0] == 0:
+                if mode == "single_marker":
+                    single_results.append((dimension, scenario, seed, 0.0, 0.0, 0.0, 0.0))
+                else:
+                    multi_results.append((dimension, seed, 0.0, 0.0, 0.0, 0.0))
+                continue
+            precision, recall, accuracy, f1 = metric_main(tree, ground_truth_indices, sphere)
+
         if mode == "single_marker":
             single_results.append((dimension, scenario, seed, precision, recall, accuracy, f1))
         else:
             multi_results.append((dimension, seed, precision, recall, accuracy, f1))
     except Exception as e:
-        print(f"Error evaluating {spheres_parquet}: {e}")
+        print(f"Error evaluating {detection_path}: {e}")
         if mode == "single_marker":
             single_results.append((dimension, scenario, seed, np.nan, np.nan, np.nan, np.nan))
         else:
