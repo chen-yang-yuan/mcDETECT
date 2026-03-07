@@ -21,7 +21,7 @@ BAYSOR_OUT_ROOT = "output/Baysor_output"
 os.makedirs(BAYSOR_OUT_ROOT, exist_ok=True)
 
 # Baysor parameters (tune once then freeze)
-DEFAULT_MIN_MOLS = 30
+DEFAULT_MIN_MOLS = 40
 DEFAULT_SCALE = 3.0
 DEFAULT_THREADS = 16
 
