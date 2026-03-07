@@ -340,7 +340,7 @@ def baysor_segmentation_to_spheres(
                 "sphere_y": float(center[1]),
                 "sphere_z": float(center[2]),
                 "sphere_r": float(np.sqrt(r2)),
-                "cell_id": int(cell_id),
+                "cell_id": str(cell_id),
                 "n_molecules": int(n),
             }
         )
