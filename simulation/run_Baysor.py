@@ -299,7 +299,7 @@ def run_baysor_cli(
 def baysor_segmentation_to_spheres(
     seg_csv: str,
     miniball_epsilon: float = 1e-4,
-    min_points_per_segment: int = 3,
+    min_points_per_segment: int = 10,
 ) -> pd.DataFrame:
     """
     Read Baysor segmentation.csv and build a sphere table:
