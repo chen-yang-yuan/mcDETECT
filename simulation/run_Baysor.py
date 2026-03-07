@@ -255,39 +255,84 @@ def run_baysor_cli(
     )
 
 
+# def baysor_segmentation_to_spheres(
+#     seg_csv: str,
+#     baysor_input_csv: str,
+#     miniball_epsilon: float = 1e-4,
+#     min_points_per_segment: int = 3,
+# ) -> pd.DataFrame:
+#     """
+#     Read segmentation.csv + Baysor input CSV and build a sphere table:
+#       sphere_x, sphere_y, sphere_z, sphere_r
+#     """
+#     seg = pd.read_csv(seg_csv)
+#     mol = pd.read_csv(baysor_input_csv, usecols=["transcript_id", "x", "y", "z"])
+
+#     if "transcript_id" not in seg.columns:
+#         raise ValueError(f"{seg_csv} missing transcript_id. Columns: {list(seg.columns)}")
+#     if "cell" not in seg.columns:
+#         raise ValueError(f"{seg_csv} missing cell. Columns: {list(seg.columns)}")
+
+#     merged = seg.merge(mol, on="transcript_id", how="inner")
+
+#     # Conventions: cell==0 means unassigned
+#     merged = merged[merged["cell"] != 0]
+
+#     # Optional noise filter if present
+#     if "is_noise" in merged.columns:
+#         merged = merged[merged["is_noise"].astype(str).str.lower() != "true"]
+
+#     rows = []
+#     for cell_id, g in merged.groupby("cell", sort=False):
+#         coords = g[["x", "y", "z"]].to_numpy(dtype=float)
+#         n = coords.shape[0]
+#         if n < min_points_per_segment:
+#             continue
+#         center, r2 = miniball.get_bounding_ball(coords, epsilon=miniball_epsilon)
+#         rows.append(
+#             {
+#                 "sphere_x": float(center[0]),
+#                 "sphere_y": float(center[1]),
+#                 "sphere_z": float(center[2]),
+#                 "sphere_r": float(np.sqrt(r2)),
+#                 "cell_id": int(cell_id),
+#                 "n_molecules": int(n),
+#             }
+#         )
+
+#     return pd.DataFrame(rows, columns=["sphere_x", "sphere_y", "sphere_z", "sphere_r", "cell_id", "n_molecules"])
+
+
 def baysor_segmentation_to_spheres(
     seg_csv: str,
-    baysor_input_csv: str,
     miniball_epsilon: float = 1e-4,
     min_points_per_segment: int = 3,
 ) -> pd.DataFrame:
     """
-    Read segmentation.csv + Baysor input CSV and build a sphere table:
+    Read Baysor segmentation.csv and build a sphere table:
       sphere_x, sphere_y, sphere_z, sphere_r
     """
     seg = pd.read_csv(seg_csv)
-    mol = pd.read_csv(baysor_input_csv, usecols=["transcript_id", "x", "y", "z"])
 
-    if "transcript_id" not in seg.columns:
-        raise ValueError(f"{seg_csv} missing transcript_id. Columns: {list(seg.columns)}")
-    if "cell" not in seg.columns:
-        raise ValueError(f"{seg_csv} missing cell. Columns: {list(seg.columns)}")
+    required = {"transcript_id", "x", "y", "z", "cell"}
+    missing = required - set(seg.columns)
+    if missing:
+        raise ValueError(f"{seg_csv} missing required columns: {missing}")
 
-    merged = seg.merge(mol, on="transcript_id", how="inner")
+    # cell==0 means unassigned
+    seg = seg[seg["cell"] != 0]
 
-    # Conventions: cell==0 means unassigned
-    merged = merged[merged["cell"] != 0]
-
-    # Optional noise filter if present
-    if "is_noise" in merged.columns:
-        merged = merged[merged["is_noise"].astype(str).str.lower() != "true"]
+    # Optional noise filter
+    if "is_noise" in seg.columns:
+        seg = seg[seg["is_noise"].astype(str).str.lower() != "true"]
 
     rows = []
-    for cell_id, g in merged.groupby("cell", sort=False):
+    for cell_id, g in seg.groupby("cell", sort=False):
         coords = g[["x", "y", "z"]].to_numpy(dtype=float)
         n = coords.shape[0]
         if n < min_points_per_segment:
             continue
+
         center, r2 = miniball.get_bounding_ball(coords, epsilon=miniball_epsilon)
         rows.append(
             {
@@ -300,7 +345,10 @@ def baysor_segmentation_to_spheres(
             }
         )
 
-    return pd.DataFrame(rows, columns=["sphere_x", "sphere_y", "sphere_z", "sphere_r", "cell_id", "n_molecules"])
+    return pd.DataFrame(
+        rows,
+        columns=["sphere_x", "sphere_y", "sphere_z", "sphere_r", "cell_id", "n_molecules"],
+    )
 
 
 # ==================== Main loop: run Baysor over all simulations ==================== #
@@ -376,7 +424,8 @@ def run_all_baysor(
                     make_plots=False,
                 )
 
-                spheres = baysor_segmentation_to_spheres(seg_csv, in_csv)
+                # spheres = baysor_segmentation_to_spheres(seg_csv, in_csv)
+                spheres = baysor_segmentation_to_spheres(seg_csv)
 
             spheres.to_parquet(spheres_parquet, index=False)
             logs.append(
