@@ -274,9 +274,11 @@ def run_baysor_cli(
 # ==================== Polygon-based detection (used when USE_POLYGONS=True) ==================== #
 
 def _parse_z_range(z_key: str):
-    """Parse Baysor z-slice key like '[-35.14, 0.89)' into (z_lo, z_hi)."""
+    """Parse Baysor z-slice key like '[-35.14, 0.89)' or '[9.57, 41.44]' into (z_lo, z_hi)."""
     import re
-    m = re.match(r"\[\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*\)", z_key.strip())
+    s = z_key.strip()
+    # Accept both half-open [a, b) and closed [a, b]
+    m = re.match(r"\[\s*([-\d.eE+]+)\s*,\s*([-\d.eE+]+)\s*[)\]]", s)
     if not m:
         raise ValueError(f"Invalid z range key: {z_key!r}")
     return float(m.group(1)), float(m.group(2))
