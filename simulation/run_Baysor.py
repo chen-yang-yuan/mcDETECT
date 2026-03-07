@@ -21,7 +21,7 @@ BAYSOR_OUT_ROOT = "output/Baysor_output"
 os.makedirs(BAYSOR_OUT_ROOT, exist_ok=True)
 
 # Baysor parameters (tune once then freeze)
-DEFAULT_MIN_MOLS = 40
+DEFAULT_MIN_MOLS = 30
 DEFAULT_SCALE = 1.5
 DEFAULT_THREADS = 16
 
@@ -299,7 +299,7 @@ def run_baysor_cli(
 def baysor_segmentation_to_spheres(
     seg_csv: str,
     miniball_epsilon: float = 1e-4,
-    min_points_per_segment: int = 10,
+    min_points_per_segment: int = 3,
 ) -> pd.DataFrame:
     """
     Read Baysor segmentation.csv and build a sphere table:
