@@ -41,7 +41,7 @@ os.makedirs(BAYSOR_OUT_ROOT, exist_ok=True)
 
 # Baysor parameters (tune once then freeze)
 DEFAULT_MIN_MOLS = 50
-DEFAULT_SCALE = 3.0
+DEFAULT_SCALE = 1.5
 DEFAULT_THREADS = 16
 
 # Resume logic: skip if baysor_spheres.parquet already exists
@@ -57,7 +57,7 @@ BAYSOR_3D_ONLY = True
 PROGRESS_EVERY_N_SEEDS = 10
 
 # Debug: optionally run on a small subset first
-DEBUG_SAMPLE = True
+DEBUG_SAMPLE = False
 DEBUG_MODE = {
     "mode": "multi_marker",
     "dimension": "3D",
