@@ -50,7 +50,6 @@ fi
 
 # ---------- No args: submit 20 block jobs ----------
 
-mkdir -p logs
 for BLOCK in $(seq 1 20); do
     sbatch --job-name="Baysor_b${BLOCK}" \
            --output="logs/Baysor_block${BLOCK}_%j.out" \
