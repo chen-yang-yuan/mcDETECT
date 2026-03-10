@@ -13,7 +13,7 @@ output/
 validation/
 
 # Other analysis
-other_analysis/*
+other_analysis/
 
 # Simulation related
 simulation/simulated_data/
