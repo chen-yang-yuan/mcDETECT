@@ -555,8 +555,8 @@ if BLOCK is None:
             metrics = compute_object_level_metrics(
                 transcripts=transcripts,
                 spheres=sphere,
-                tau_c=0.9,
-                tau_p=0.9,
+                tau_c=0.5,
+                tau_p=0.5,
                 type_col="type",
                 granule_col="granule_id",
                 x_col=x_col,
