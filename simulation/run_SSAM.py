@@ -50,7 +50,7 @@ os.makedirs(SSAM_OUT_ROOT, exist_ok=True)
 
 # SSAM parameters (tune once then freeze)
 DEFAULT_BANDWIDTH = 2.5
-DEFAULT_SAMPLING_DISTANCE = 1.0
+DEFAULT_SAMPLING_DISTANCE = 2.0     # previous: 1.0
 DEFAULT_FIND_LOCALMAX_SEARCH_SIZE = 3
 
 # Fixed radius for SSAM "detection spheres" (SSAM outputs cell centers only; we need sphere_r for metric_main)
