@@ -4,11 +4,10 @@ import numpy as np
 import os
 import pandas as pd
 import re
-import sys
 import tempfile
 import time
 
-from evaluation_utils import make_tree, metric_main
+from evaluation_utils import compute_object_level_metrics
 from pathlib import Path
 
 import ssam
@@ -375,45 +374,7 @@ print(index_df.head())
 # separate run (no --block), after all spheres have been generated.
 if BLOCK is None:
 
-    def get_ground_truth_single(dimension: str, scenario: str, seed: int):
-        """Load single-marker ground-truth parents from Parquet and build KD-tree."""
-        gt_path = os.path.join(
-            SIM_DATA_ROOT,
-            "single_marker",
-            dimension,
-            scenario,
-            f"seed_{seed}_ground_truth.parquet",
-        )
-        if not os.path.exists(gt_path):
-            raise FileNotFoundError(f"Ground-truth file not found: {gt_path}")
-        parents_all = pd.read_parquet(gt_path)
-        tree = make_tree(
-            d1=np.array(parents_all["x"]),
-            d2=np.array(parents_all["y"]),
-            d3=np.array(parents_all["z"]),
-        )
-        return parents_all, tree
-
-    def get_ground_truth_multi(dimension: str, seed: int):
-        """Load multi-marker ground-truth parents from Parquet and build KD-tree."""
-        gt_path = os.path.join(
-            SIM_DATA_ROOT,
-            "multi_marker",
-            dimension,
-            "all",
-            f"seed_{seed}_ground_truth.parquet",
-        )
-        if not os.path.exists(gt_path):
-            raise FileNotFoundError(f"Ground-truth file not found: {gt_path}")
-        parents_all = pd.read_parquet(gt_path)
-        tree = make_tree(
-            d1=np.array(parents_all["x"]),
-            d2=np.array(parents_all["y"]),
-            d3=np.array(parents_all["z"]),
-        )
-        return parents_all, tree
-
-    # Same constants as main.ipynb / run_Baysor.ipynb
+    # Same constants as main.ipynb / run_Baysor.py
     POINT_TYPE = ["CSR", "Extranuclear", "Intranuclear"]
     RATIO = [0.5, 0.25, 0.25]
     MEAN_DIST_EXTRA = 1
@@ -459,28 +420,62 @@ if BLOCK is None:
             continue
         sphere = pd.read_parquet(spheres_parquet)
         if sphere.shape[0] == 0:
+            # No detections: precision = recall = F1 = 0 by convention.
             if mode == "single_marker":
-                single_results.append((dimension, scenario, seed, 0.0, 0.0, 0.0, 0.0))
+                single_results.append((dimension, scenario, seed, 0.0, 0.0, 0.0))
             else:
-                multi_results.append((dimension, seed, 0.0, 0.0, 0.0, 0.0))
+                multi_results.append((dimension, seed, 0.0, 0.0, 0.0))
             continue
+
+        # Reconstruct the simulated transcript parquet path from out_dir.
+        out_dir = row["out_dir"]
+        rel_from_out_root = os.path.relpath(out_dir, SSAM_OUT_ROOT)
+        sim_parquet = os.path.join(SIM_DATA_ROOT, rel_from_out_root + ".parquet")
+
         try:
-            if mode == "single_marker":
-                parents_all, tree = get_ground_truth_single(dimension, scenario, seed)
+            if not os.path.exists(sim_parquet):
+                raise FileNotFoundError(f"Simulated data file not found: {sim_parquet}")
+
+            transcripts = pd.read_parquet(sim_parquet)
+
+            # Determine coordinate column names (x,y,z vs global_x,global_y,global_z).
+            if {"x", "y"}.issubset(transcripts.columns):
+                x_col, y_col, z_col = "x", "y", "z"
+            elif {"global_x", "global_y"}.issubset(transcripts.columns):
+                x_col, y_col, z_col = "global_x", "global_y", "global_z"
             else:
-                parents_all, tree = get_ground_truth_multi(dimension, seed)
-            ground_truth_indices = set(parents_all.index)
-            precision, recall, accuracy, f1 = metric_main(tree, ground_truth_indices, sphere)
+                raise ValueError(
+                    f"{sim_parquet}: need (x,y,z) or (global_x,global_y,global_z). "
+                    f"Got columns: {list(transcripts.columns)}"
+                )
+
+            metrics = compute_object_level_metrics(
+                transcripts=transcripts,
+                spheres=sphere,
+                tau_c=0.9,
+                tau_p=0.9,
+                type_col="type",
+                granule_col="granule_id",
+                x_col=x_col,
+                y_col=y_col,
+                z_col=z_col,
+                extranuclear_label="Extranuclear",
+            )
+
+            precision = float(metrics["precision"])
+            recall = float(metrics["recall"])
+            f1 = float(metrics["f1"])
+
             if mode == "single_marker":
-                single_results.append((dimension, scenario, seed, precision, recall, accuracy, f1))
+                single_results.append((dimension, scenario, seed, precision, recall, f1))
             else:
-                multi_results.append((dimension, seed, precision, recall, accuracy, f1))
+                multi_results.append((dimension, seed, precision, recall, f1))
         except Exception as e:
             print(f"Error evaluating {spheres_parquet}: {e}")
             if mode == "single_marker":
-                single_results.append((dimension, scenario, seed, np.nan, np.nan, np.nan, np.nan))
+                single_results.append((dimension, scenario, seed, np.nan, np.nan, np.nan))
             else:
-                multi_results.append((dimension, seed, np.nan, np.nan, np.nan, np.nan))
+                multi_results.append((dimension, seed, np.nan, np.nan, np.nan))
 
     print("Single-marker results:", len(single_results))
     print("Multi-marker results:", len(multi_results))
@@ -494,8 +489,7 @@ if BLOCK is None:
             "Simulation": [r[2] for r in rows],
             "Precision": [r[3] for r in rows],
             "Recall": [r[4] for r in rows],
-            "Accuracy": [r[5] for r in rows],
-            "F1 Score": [r[6] for r in rows],
+            "F1 Score": [r[5] for r in rows],
         })
         path = os.path.join(EVAL_OUT_DIR, f"single_marker_{dimension}_{scenario}_{extra}_{intra}_ssam.csv")
         df.to_csv(path, index=False)
@@ -508,8 +502,7 @@ if BLOCK is None:
             "Simulation": [r[1] for r in rows],
             "Precision": [r[2] for r in rows],
             "Recall": [r[3] for r in rows],
-            "Accuracy": [r[4] for r in rows],
-            "F1": [r[5] for r in rows],
+            "F1": [r[4] for r in rows],
         })
         path = os.path.join(EVAL_OUT_DIR, f"multi_marker_{dimension}_all_{EXTRA_NUM_CLUSTERS}_{INTRA_NUM_CLUSTERS}_ssam.csv")
         df.to_csv(path, index=False)

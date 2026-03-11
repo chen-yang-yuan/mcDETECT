@@ -1,17 +1,16 @@
 import argparse
 import glob
+import miniball
+import numpy as np
 import os
+import pandas as pd
 import re
 import subprocess
 import tempfile
 import time
 from pathlib import Path
 
-import miniball
-import numpy as np
-import pandas as pd
-
-from evaluation_utils import make_tree, metric_main
+from evaluation_utils import make_tree, compute_object_level_metrics
 
 
 # ==================== Job / block selector for parallel runs (HGCC) ==================== #
@@ -41,7 +40,7 @@ os.makedirs(BAYSOR_OUT_ROOT, exist_ok=True)
 
 # Baysor parameters (tune once then freeze)
 DEFAULT_MIN_MOLS = 50
-DEFAULT_SCALE = 1.5
+DEFAULT_SCALE = -1
 DEFAULT_THREADS = 16
 
 # Resume logic: skip if baysor_spheres.parquet already exists
@@ -560,28 +559,62 @@ if BLOCK is None:
             continue
         sphere = pd.read_parquet(spheres_parquet)
         if sphere.shape[0] == 0:
+            # No detections: precision = recall = F1 = 0 by convention.
             if mode == "single_marker":
-                single_results.append((dimension, scenario, seed, 0.0, 0.0, 0.0, 0.0))
+                single_results.append((dimension, scenario, seed, 0.0, 0.0, 0.0))
             else:
-                multi_results.append((dimension, seed, 0.0, 0.0, 0.0, 0.0))
+                multi_results.append((dimension, seed, 0.0, 0.0, 0.0))
             continue
+
+        # Reconstruct the simulated transcript parquet path from out_dir.
+        out_dir = row["out_dir"]
+        rel_from_out_root = os.path.relpath(out_dir, BAYSOR_OUT_ROOT)
+        sim_parquet = os.path.join(SIM_DATA_ROOT, rel_from_out_root + ".parquet")
+
         try:
-            if mode == "single_marker":
-                parents_all, tree = get_ground_truth_single(dimension, scenario, seed)
+            if not os.path.exists(sim_parquet):
+                raise FileNotFoundError(f"Simulated data file not found: {sim_parquet}")
+
+            transcripts = pd.read_parquet(sim_parquet)
+
+            # Determine coordinate column names (x,y,z vs global_x,global_y,global_z).
+            if {"x", "y"}.issubset(transcripts.columns):
+                x_col, y_col, z_col = "x", "y", "z"
+            elif {"global_x", "global_y"}.issubset(transcripts.columns):
+                x_col, y_col, z_col = "global_x", "global_y", "global_z"
             else:
-                parents_all, tree = get_ground_truth_multi(dimension, seed)
-            ground_truth_indices = set(parents_all.index)
-            precision, recall, accuracy, f1 = metric_main(tree, ground_truth_indices, sphere)
+                raise ValueError(
+                    f"{sim_parquet}: need (x,y,z) or (global_x,global_y,global_z). "
+                    f"Got columns: {list(transcripts.columns)}"
+                )
+
+            metrics = compute_object_level_metrics(
+                transcripts=transcripts,
+                spheres=sphere,
+                tau_c=0.9,
+                tau_p=0.9,
+                type_col="type",
+                granule_col="granule_id",
+                x_col=x_col,
+                y_col=y_col,
+                z_col=z_col,
+                extranuclear_label="Extranuclear",
+            )
+
+            precision = float(metrics["precision"])
+            recall = float(metrics["recall"])
+            f1 = float(metrics["f1"])
+
             if mode == "single_marker":
-                single_results.append((dimension, scenario, seed, precision, recall, accuracy, f1))
+                single_results.append((dimension, scenario, seed, precision, recall, f1))
             else:
-                multi_results.append((dimension, seed, precision, recall, accuracy, f1))
+                multi_results.append((dimension, seed, precision, recall, f1))
         except Exception as e:
             print(f"Error evaluating {spheres_parquet}: {e}")
             if mode == "single_marker":
-                single_results.append((dimension, scenario, seed, np.nan, np.nan, np.nan, np.nan))
+                single_results.append((dimension, scenario, seed, np.nan, np.nan, np.nan))
             else:
-                multi_results.append((dimension, seed, np.nan, np.nan, np.nan, np.nan))
+                multi_results.append((dimension, seed, np.nan, np.nan, np.nan))
 
     print("Single-marker results:", len(single_results))
     print("Multi-marker results:", len(multi_results))
@@ -596,8 +629,7 @@ if BLOCK is None:
                 "Simulation": [r[2] for r in rows],
                 "Precision": [r[3] for r in rows],
                 "Recall": [r[4] for r in rows],
-                "Accuracy": [r[5] for r in rows],
-                "F1 Score": [r[6] for r in rows],
+                "F1 Score": [r[5] for r in rows],
             }
         )
         path = os.path.join(
@@ -615,8 +647,7 @@ if BLOCK is None:
                 "Simulation": [r[1] for r in rows],
                 "Precision": [r[2] for r in rows],
                 "Recall": [r[3] for r in rows],
-                "Accuracy": [r[4] for r in rows],
-                "F1": [r[5] for r in rows],
+                "F1": [r[4] for r in rows],
             }
         )
         path = os.path.join(
