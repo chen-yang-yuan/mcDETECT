@@ -8,9 +8,9 @@ import re
 import subprocess
 import tempfile
 import time
-from pathlib import Path
 
 from evaluation_utils import make_tree, compute_object_level_metrics
+from pathlib import Path
 
 
 # ==================== Job / block selector for parallel runs (HGCC) ==================== #
@@ -30,6 +30,7 @@ PARSER.add_argument(
 )
 ARGS = PARSER.parse_args()
 BLOCK = ARGS.block
+
 
 # ==================== User configurations ==================== #
 
@@ -469,6 +470,7 @@ index_df.to_csv(index_path, index=False)
 print("Saved index:", index_path)
 print("\nStatus counts:", logs_df["status"].value_counts().to_dict())
 print(index_df.head())
+
 
 # ==================== Evaluation: ground truth and metrics ==================== #
 # For block jobs we only run Baysor. Evaluation is done in a separate run (no --block),
