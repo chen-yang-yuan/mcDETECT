@@ -78,7 +78,7 @@ for JOB in A B C all; do
            --output="logs/SSAM_${JOB}_block${BLOCK}_%j.out" \
            --error="logs/SSAM_${JOB}_block${BLOCK}_%j.err" \
            --time=240:00:00 \
-           --mem=50G \
+           --mem=200G \
            --cpus-per-task=16 \
            --partition=nodes \
            --mail-type=END,FAIL \

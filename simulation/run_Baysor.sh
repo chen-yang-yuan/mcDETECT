@@ -55,7 +55,7 @@ for BLOCK in $(seq 1 20); do
            --output="logs/Baysor_block${BLOCK}_%j.out" \
            --error="logs/Baysor_block${BLOCK}_%j.err" \
            --time=240:00:00 \
-           --mem=50G \
+           --mem=200G \
            --cpus-per-task=16 \
            --partition=nodes \
            --mail-type=END,FAIL \
