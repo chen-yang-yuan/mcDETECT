@@ -477,44 +477,6 @@ print(index_df.head())
 # after all 20 blocks have produced output.
 if BLOCK is None:
 
-    def get_ground_truth_single(dimension: str, scenario: str, seed: int):
-        """Load single-marker ground-truth parents from Parquet and build KD-tree."""
-        gt_path = os.path.join(
-            SIM_DATA_ROOT,
-            "single_marker",
-            dimension,
-            scenario,
-            f"seed_{seed}_ground_truth.parquet",
-        )
-        if not os.path.exists(gt_path):
-            raise FileNotFoundError(f"Ground-truth file not found: {gt_path}")
-        parents_all = pd.read_parquet(gt_path)
-        tree = make_tree(
-            d1=np.array(parents_all["x"]),
-            d2=np.array(parents_all["y"]),
-            d3=np.array(parents_all["z"]),
-        )
-        return parents_all, tree
-
-    def get_ground_truth_multi(dimension: str, seed: int):
-        """Load multi-marker ground-truth parents from Parquet (scenario 'all') and build KD-tree."""
-        gt_path = os.path.join(
-            SIM_DATA_ROOT,
-            "multi_marker",
-            dimension,
-            "all",
-            f"seed_{seed}_ground_truth.parquet",
-        )
-        if not os.path.exists(gt_path):
-            raise FileNotFoundError(f"Ground-truth file not found: {gt_path}")
-        parents_all = pd.read_parquet(gt_path)
-        tree = make_tree(
-            d1=np.array(parents_all["x"]),
-            d2=np.array(parents_all["y"]),
-            d3=np.array(parents_all["z"]),
-        )
-        return parents_all, tree
-
     # Same constants as main.ipynb / run_SSAM.py (for naming)
     POINT_TYPE = ["CSR", "Extranuclear", "Intranuclear"]
     RATIO = [0.5, 0.25, 0.25]
