@@ -13,6 +13,7 @@ from pathlib import Path
 import ssam
 print("ssam:", getattr(ssam, "__version__", "unknown"))
 
+
 # ==================== Job / block selector for parallel runs ==================== #
 # Usage examples:
 #   python run_SSAM.py --job A           # single_marker 3D scenario A (all 200 seeds)
@@ -38,6 +39,7 @@ PARSER.add_argument(
 ARGS = PARSER.parse_args()
 JOB = ARGS.job
 BLOCK = ARGS.block
+
 
 # ==================== User configurations ==================== #
 
@@ -68,6 +70,7 @@ PROGRESS_EVERY_N_SEEDS = 10
 print("SIM_DATA_ROOT:", SIM_DATA_ROOT)
 print("SSAM_OUT_ROOT:", SSAM_OUT_ROOT)
 print("SSAM_3D_ONLY:", SSAM_3D_ONLY)
+
 
 # ==================== Discover simulated parquet files ==================== #
 
@@ -145,6 +148,7 @@ if BLOCK is not None:
 
 print(inputs_df.head())
 
+
 # ==================== Convert simulated parquet file → SSAM input (x, y, z, gene) ==================== #
 
 def simulated_to_ssam_df(sim_parquet: str, is_3d: bool) -> pd.DataFrame:
@@ -168,6 +172,7 @@ def simulated_to_ssam_df(sim_parquet: str, is_3d: bool) -> pd.DataFrame:
         out["z"] = 0.0
     return out
 
+
 # ==================== Output path mapping (mirror directory layout) ==================== #
 
 def make_ssam_out_paths(sim_parquet: str, sim_root: str, out_root: str):
@@ -176,6 +181,7 @@ def make_ssam_out_paths(sim_parquet: str, sim_root: str, out_root: str):
     out_dir = os.path.join(out_root, rel_no_ext)
     spheres_parquet = os.path.join(out_dir, "ssam_spheres.parquet")
     return out_dir, spheres_parquet
+
 
 # ==================== Run SSAM (KDE + local maxima) and convert to detection spheres ==================== #
 
@@ -245,7 +251,8 @@ def run_ssam_one(
         spheres = ssam_localmax_to_spheres(ds, detection_radius, is_3d)
 
     spheres.to_parquet(spheres_parquet, index=False)
-    
+
+
 # ==================== Main loop: run SSAM over all simulations ==================== #
 
 def run_all_ssam(
@@ -347,6 +354,7 @@ logs_df = run_all_ssam(
 
 logs_df["status"].value_counts()
 
+
 # ==================== Save logs and create index for evaluation ==================== #
 
 Path(SSAM_OUT_ROOT).mkdir(parents=True, exist_ok=True)
@@ -367,6 +375,7 @@ index_df.to_csv(index_path, index=False)
 print("Saved index:", index_path)
 print("\nStatus counts:", logs_df["status"].value_counts().to_dict())
 print(index_df.head())
+
 
 # ==================== Evaluation: ground truth and metrics ==================== #
 
