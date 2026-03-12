@@ -38,10 +38,11 @@ BLOCK = ARGS.block
 SIM_DATA_ROOT = "simulated_data"
 BAYSOR_OUT_ROOT = "output/Baysor_output"
 os.makedirs(BAYSOR_OUT_ROOT, exist_ok=True)
+os.makedirs(BAYSOR_OUT_ROOT + "xtabs", exist_ok=True)
 
 # Baysor parameters (tune once then freeze)
-DEFAULT_MIN_MOLS = 15
-DEFAULT_SCALE = 1.5
+DEFAULT_MIN_MOLS = 30
+DEFAULT_SCALE = 30
 DEFAULT_THREADS = 16
 
 # Resume logic: skip if baysor_spheres.parquet already exists
@@ -552,7 +553,7 @@ if BLOCK is None:
                     f"Got columns: {list(transcripts.columns)}"
                 )
 
-            metrics = compute_object_level_metrics(
+            metrics, xtab = compute_object_level_metrics(
                 transcripts=transcripts,
                 spheres=sphere,
                 tau_c=0.5,
@@ -568,6 +569,9 @@ if BLOCK is None:
             precision = float(metrics["precision"])
             recall = float(metrics["recall"])
             f1 = float(metrics["f1"])
+
+            if mode == "multi_marker":
+                xtab.to_csv(os.path.join(BAYSOR_OUT_ROOT, f"xtabs/multi_marker_{dimension}_all_{EXTRA_NUM_CLUSTERS}_{INTRA_NUM_CLUSTERS}_seed_{seed}_xtab.csv"), index=False)
 
             if mode == "single_marker":
                 single_results.append((dimension, scenario, seed, precision, recall, f1))
