@@ -104,8 +104,6 @@ class simulation: # for simulating one point process only, CSR and clustering
         cv2.imwrite(os.path.join(self.write_path, 'simulation_{}_density_{:.4f}.png'.format(self.name, self.density)), img)
 
 
-
-
 class multi_simulation: # for simulating multiple point processes, clustering
     
     
@@ -160,11 +158,16 @@ class multi_simulation: # for simulating multiple point processes, clustering
         parents_all = {}
         points_all = {}
         
+        # Precompute which *global* clusters are considered "true" by composition threshold.
+        # Note: this is the ground-truth definition used downstream: only clusters with
+        # num_comp >= comp_thr are treated as true extranuclear (or intranuclear) aggregates.
+        is_true_cluster = (num_comp >= comp_thr)
+
         for j in self.name:
             
             j_idx = self.name.index(j)
             
-            # clusters containing j
+            # clusters containing j (these are indices into the global cluster list [0..num_clusters-1])
             valid_index = [i for i in range(num_clusters) if j in comp_name[i]]
             num_clusters_temp = len(valid_index)
             if num_clusters_temp == 0:
@@ -186,7 +189,11 @@ class multi_simulation: # for simulating multiple point processes, clustering
             phi = np.arccos(1 - 2 * u)                      # sine-weighted polar angle
             
             # make data
-            id = []
+            # IMPORTANT: assign a *global* cluster identifier per transcript (granule_id),
+            # rather than the local (0..num_clusters_temp-1) index used previously.
+            # This ensures IDs are consistent across genes and match the multi-marker GT.
+            local_id = []
+            granule_id = []
             in_nucleus = []
             # for i in range(num_clusters_temp):
             #     np.random.seed(self.seed + i)
@@ -195,7 +202,12 @@ class multi_simulation: # for simulating multiple point processes, clustering
             in_nucleus_ratio_temp = in_nucleus_ratio[valid_index]
             for i in range(num_clusters_temp):
                 np.random.seed(self.seed + i)
-                id += [i] * n_offspring[i]
+                local_id += [i] * n_offspring[i]
+                # Map local cluster i back to global cluster index.
+                gid = int(valid_index[i])
+                # Only clusters with composition >= comp_thr are considered ground truth.
+                gid = gid if bool(is_true_cluster[gid]) else -1
+                granule_id += [gid] * n_offspring[i]
                 in_nucleus += np.random.binomial(1, in_nucleus_ratio_temp[i], n_offspring[i]).tolist()
         
             offspring_x = np.zeros(n)
@@ -203,9 +215,10 @@ class multi_simulation: # for simulating multiple point processes, clustering
             offspring_z = np.zeros(n)
             
             for i in range(n):
-                offspring_x[i] = parent_x_temp[id[i]] + d_offspring[i] * np.sin(phi[i]) * np.cos(theta[i])
-                offspring_y[i] = parent_y_temp[id[i]] + d_offspring[i] * np.sin(phi[i]) * np.sin(theta[i])
-                offspring_z[i] = parent_z_temp[id[i]] + d_offspring[i] * np.cos(phi[i])
+                li = local_id[i]
+                offspring_x[i] = parent_x_temp[li] + d_offspring[i] * np.sin(phi[i]) * np.cos(theta[i])
+                offspring_y[i] = parent_y_temp[li] + d_offspring[i] * np.sin(phi[i]) * np.sin(theta[i])
+                offspring_z[i] = parent_z_temp[li] + d_offspring[i] * np.cos(phi[i])
                 
             if not self.simulate_z:
                 parent_z_temp = np.zeros(num_clusters_temp)
@@ -213,7 +226,7 @@ class multi_simulation: # for simulating multiple point processes, clustering
                 
             parents_temp = pd.DataFrame({'target': [j] * num_clusters_temp, 'global_x': parent_x_temp, 'global_y': parent_y_temp, 'global_z': parent_z_temp})
             parents_all[j_idx] = parents_temp
-            points = pd.DataFrame({'id': id, 'target': [j] * n, 'global_x': offspring_x, 'global_y': offspring_y, 'global_z': offspring_z, 'in_nucleus': in_nucleus})
+            points = pd.DataFrame({'granule_id': granule_id, 'target': [j] * n, 'global_x': offspring_x, 'global_y': offspring_y, 'global_z': offspring_z, 'in_nucleus': in_nucleus})
             points_all[j_idx] = points
         
         # filter clusters with composition >= comp_thr
