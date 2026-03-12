@@ -18,6 +18,7 @@ other_analysis/
 # Simulation related
 simulation/simulated_data/
 simulation/output/
+simulation/env/
 
 # Figure related
 **/figures.*

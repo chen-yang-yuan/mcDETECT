@@ -47,7 +47,7 @@ BLOCK = ARGS.block
 SIM_DATA_ROOT = "simulated_data"
 SSAM_OUT_ROOT = "output/SSAM_output"
 os.makedirs(SSAM_OUT_ROOT, exist_ok=True)
-os.makedirs(SSAM_OUT_ROOT + "xtabs", exist_ok=True)
+os.makedirs(os.path.join(SSAM_OUT_ROOT, "xtabs"), exist_ok=True)
 
 # SSAM parameters (tune once then freeze)
 DEFAULT_BANDWIDTH = 2.5

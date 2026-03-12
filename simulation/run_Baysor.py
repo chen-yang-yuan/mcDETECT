@@ -38,7 +38,7 @@ BLOCK = ARGS.block
 SIM_DATA_ROOT = "simulated_data"
 BAYSOR_OUT_ROOT = "output/Baysor_output"
 os.makedirs(BAYSOR_OUT_ROOT, exist_ok=True)
-os.makedirs(BAYSOR_OUT_ROOT + "xtabs", exist_ok=True)
+os.makedirs(os.path.join(BAYSOR_OUT_ROOT, "xtabs"), exist_ok=True)
 
 # Baysor parameters (tune once then freeze)
 DEFAULT_MIN_MOLS = 30
