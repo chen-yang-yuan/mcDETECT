@@ -125,8 +125,13 @@ def compute_object_level_metrics(
     df = transcripts.reset_index(drop=True).copy()
 
     # Ground-truth extranuclear aggregates: group by granule_col (excluding -1).
-    mask_gt = (df[type_col] == extranuclear_label) & (df[granule_col] != -1)
-    df_gt = df.loc[mask_gt, [granule_col]]
+    #
+    # Be defensive about dtype here: when concatenating DataFrames where some parts
+    # lack `granule_col`, pandas will create it and fill with NaN, which would crash
+    # on astype(int). We treat NaN as "not a GT aggregate" (same as -1).
+    granule_series = pd.to_numeric(df[granule_col], errors="coerce")
+    mask_gt = (df[type_col] == extranuclear_label) & granule_series.notna() & (granule_series != -1)
+    df_gt = pd.DataFrame({granule_col: granule_series[mask_gt]})
 
     if df_gt.empty:
         # No ground-truth extranuclear aggregates; all detections are FPs.
