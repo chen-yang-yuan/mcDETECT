@@ -34,6 +34,7 @@ def compute_object_level_metrics(
     y_col="y",
     z_col="z",
     extranuclear_label="Extranuclear",
+    return_crosstab: bool = True,
 ):
     """
     Object-level precision/recall/F1 using purity + completeness + one-to-one matching.
@@ -102,9 +103,19 @@ def compute_object_level_metrics(
           "num_gt_objects": int,
           "num_detections": int,
         }
+
+    crosstab : pandas.DataFrame, optional
+        Only returned when `return_crosstab=True`. A contingency table of
+        transcript counts with shape (num_detections + 1, num_gt_objects + 1),
+        where:
+          - rows 0..J-1 are detection spheres (sphere_0, sphere_1, ...)
+          - last row 'no_sphere' aggregates transcripts not inside any sphere
+          - columns 0..K-1 are GT aggregates (gt_<granule_id>)
+          - last column 'no_gt' aggregates transcripts not belonging to any
+            GT aggregate (e.g. CSR, intranuclear, or filtered-out clusters).
     """
     if transcripts.empty or spheres.empty:
-        return {
+        metrics = {
             "precision": 0.0,
             "recall": 0.0,
             "f1": 0.0,
@@ -114,6 +125,9 @@ def compute_object_level_metrics(
             "num_gt_objects": 0,
             "num_detections": int(spheres.shape[0]),
         }
+        if return_crosstab:
+            return metrics, None
+        return metrics
 
     required_cols = {type_col, granule_col, x_col, y_col, z_col}
     missing = required_cols - set(transcripts.columns)
@@ -136,7 +150,7 @@ def compute_object_level_metrics(
     if df_gt.empty:
         # No ground-truth extranuclear aggregates; all detections are FPs.
         num_det = int(spheres.shape[0])
-        return {
+        metrics = {
             "precision": 0.0 if num_det > 0 else 0.0,
             "recall": 0.0,
             "f1": 0.0,
@@ -146,18 +160,22 @@ def compute_object_level_metrics(
             "num_gt_objects": 0,
             "num_detections": num_det,
         }
+        if return_crosstab:
+            return metrics, None
+        return metrics
 
     # Map each aggregate ID to the set of transcript indices (0..N-1) it contains.
     granule_ids = df_gt[granule_col].astype(int).to_numpy()
     gt_indices = df_gt.index.to_numpy()
 
-    gt_agg_dict = {}
+    gt_agg_dict: dict[int, set[int]] = {}
     for idx, gid in zip(gt_indices, granule_ids):
         if gid not in gt_agg_dict:
             gt_agg_dict[gid] = set()
         gt_agg_dict[gid].add(int(idx))
 
-    gt_sets = [gt_agg_dict[k] for k in sorted(gt_agg_dict.keys())]
+    gt_ids = sorted(gt_agg_dict.keys())
+    gt_sets = [gt_agg_dict[k] for k in gt_ids]
     num_gt = len(gt_sets)
 
     # Build KD-tree on all transcripts for detection -> transcripts lookup.
@@ -188,7 +206,7 @@ def compute_object_level_metrics(
         precision = 0.0
         recall = 0.0
         f1 = 0.0
-        return {
+        metrics = {
             "precision": precision,
             "recall": recall,
             "f1": f1,
@@ -198,6 +216,20 @@ def compute_object_level_metrics(
             "num_gt_objects": num_gt,
             "num_detections": num_det,
         }
+        if return_crosstab:
+            return metrics, None
+        return metrics
+
+    # Optional cross-tabulation of raw overlaps between detections and GT aggregates.
+    xtab = None
+    if return_crosstab:
+        all_indices = set(range(df.shape[0]))
+        gt_union = set().union(*gt_sets) if gt_sets else set()
+        bg_gt = all_indices - gt_union
+        det_union = set().union(*det_sets) if det_sets else set()
+        bg_det = all_indices - det_union
+
+        table = np.zeros((num_det + 1, num_gt + 1), dtype=int)
 
     # Build weight matrix S_{k,j} with purity/completeness filtering.
     weights = np.zeros((num_gt, num_det), dtype=float)
@@ -210,6 +242,9 @@ def compute_object_level_metrics(
             if size_D == 0:
                 continue
             inter_size = float(len(G_k & D_j))
+            if return_crosstab:
+                # Raw intersection count for cross-tab (no thresholding).
+                table[j, k] = int(inter_size)
             if inter_size == 0.0:
                 continue
             c_kj = inter_size / size_G
@@ -220,6 +255,18 @@ def compute_object_level_metrics(
             S_kj = 2.0 * inter_size / (size_G + size_D)
             weights[k, j] = S_kj
 
+    if return_crosstab:
+        # Complete background row/column.
+        for j, D_j in enumerate(det_sets):
+            table[j, num_gt] = len(D_j & bg_gt)
+        for k, G_k in enumerate(gt_sets):
+            table[num_det, k] = len(bg_det & G_k)
+        table[num_det, num_gt] = len(bg_det & bg_gt)
+
+        row_labels = [f"sphere_{j}" for j in range(num_det)] + ["no_sphere"]
+        col_labels = [f"gt_{gid}" for gid in gt_ids] + ["no_gt"]
+        xtab = pd.DataFrame(table, index=row_labels, columns=col_labels)
+
     # If no eligible pairs, all GT objects are FN and all detections are FP.
     if not np.any(weights > 0):
         tp = 0
@@ -228,7 +275,7 @@ def compute_object_level_metrics(
         precision = 0.0 if (tp + fp) > 0 else 0.0
         recall = 0.0 if (tp + fn) > 0 else 0.0
         f1 = 0.0
-        return {
+        metrics = {
             "precision": precision,
             "recall": recall,
             "f1": f1,
@@ -238,6 +285,9 @@ def compute_object_level_metrics(
             "num_gt_objects": num_gt,
             "num_detections": num_det,
         }
+        if return_crosstab:
+            return metrics, xtab
+        return metrics
 
     # Maximum-weight bipartite matching via Hungarian algorithm.
     max_w = float(weights.max())
@@ -254,7 +304,7 @@ def compute_object_level_metrics(
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
     f1 = 2.0 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
 
-    return {
+    metrics = {
         "precision": precision,
         "recall": recall,
         "f1": f1,
@@ -264,6 +314,10 @@ def compute_object_level_metrics(
         "num_gt_objects": num_gt,
         "num_detections": num_det,
     }
+
+    if return_crosstab:
+        return metrics, xtab
+    return metrics
 
 
 # ==================== Legacy point-level metrics ==================== #

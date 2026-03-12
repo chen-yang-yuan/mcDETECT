@@ -47,6 +47,7 @@ BLOCK = ARGS.block
 SIM_DATA_ROOT = "simulated_data"
 SSAM_OUT_ROOT = "output/SSAM_output"
 os.makedirs(SSAM_OUT_ROOT, exist_ok=True)
+os.makedirs(SSAM_OUT_ROOT + "xtabs", exist_ok=True)
 
 # SSAM parameters (tune once then freeze)
 DEFAULT_BANDWIDTH = 2.5
@@ -458,7 +459,7 @@ if BLOCK is None:
                     f"Got columns: {list(transcripts.columns)}"
                 )
 
-            metrics = compute_object_level_metrics(
+            metrics, xtab = compute_object_level_metrics(
                 transcripts=transcripts,
                 spheres=sphere,
                 tau_c=0.5,
@@ -470,10 +471,13 @@ if BLOCK is None:
                 z_col=z_col,
                 extranuclear_label="Extranuclear",
             )
-
+            
             precision = float(metrics["precision"])
             recall = float(metrics["recall"])
             f1 = float(metrics["f1"])
+            
+            if mode == "multi_marker":
+                xtab.to_csv(os.path.join(SSAM_OUT_ROOT, f"xtabs/multi_marker_{dimension}_all_{EXTRA_NUM_CLUSTERS}_{INTRA_NUM_CLUSTERS}_seed_{seed}_xtab.csv"), index=False)
 
             if mode == "single_marker":
                 single_results.append((dimension, scenario, seed, precision, recall, f1))
