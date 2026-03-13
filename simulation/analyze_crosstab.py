@@ -19,16 +19,9 @@ def load_xtab(path: str) -> pd.DataFrame:
       - Columns: GT aggregates + last column 'no_gt'
       - Index column saved in the first CSV column.
     """
-    xtab = pd.read_csv(path, index_col=0)
-
-    # Be robust to duplicated row/column labels.
-    # Some exports may contain repeated sphere/gt labels; we aggregate by summing counts.
-    if not xtab.index.is_unique:
-        xtab = xtab.groupby(level=0, sort=False).sum()
-    if not xtab.columns.is_unique:
-        xtab = xtab.T.groupby(level=0, sort=False).sum().T
-
-    return xtab
+    # Match the notebook behavior: read the CSV as-is (no special index column),
+    # so rows are 0..N-1 and columns include all GT labels plus 'no_gt'.
+    return pd.read_csv(path)
 
 
 def compute_purity_completeness(xtab: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
