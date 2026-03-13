@@ -91,8 +91,16 @@ def summarize_gt_scenarios(xtab: pd.DataFrame) -> Dict[str, int]:
                 scenario = "missed"
             else:
                 best_idx = f1_col.idxmax()
-                best_p = float(p_col.loc[best_idx]) if not pd.isna(p_col.loc[best_idx]) else 0.0
-                best_c = float(c_col.loc[best_idx]) if not pd.isna(c_col.loc[best_idx]) else 0.0
+                # In case of duplicated index labels, .loc may return a Series.
+                # We coerce to float after filling NaNs with 0 for robustness.
+                best_p_val = p_col.loc[best_idx]
+                best_c_val = c_col.loc[best_idx]
+                if isinstance(best_p_val, pd.Series):
+                    best_p_val = best_p_val.iloc[0]
+                if isinstance(best_c_val, pd.Series):
+                    best_c_val = best_c_val.iloc[0]
+                best_p = float(0.0 if pd.isna(best_p_val) else best_p_val)
+                best_c = float(0.0 if pd.isna(best_c_val) else best_c_val)
 
                 p_pass = best_p >= TAU_P
                 c_pass = best_c >= TAU_C
