@@ -19,7 +19,16 @@ def load_xtab(path: str) -> pd.DataFrame:
       - Columns: GT aggregates + last column 'no_gt'
       - Index column saved in the first CSV column.
     """
-    return pd.read_csv(path, index_col=0)
+    xtab = pd.read_csv(path, index_col=0)
+
+    # Be robust to duplicated row/column labels.
+    # Some exports may contain repeated sphere/gt labels; we aggregate by summing counts.
+    if not xtab.index.is_unique:
+        xtab = xtab.groupby(level=0, sort=False).sum()
+    if not xtab.columns.is_unique:
+        xtab = xtab.T.groupby(level=0, sort=False).sum().T
+
+    return xtab
 
 
 def compute_purity_completeness(xtab: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -146,6 +155,10 @@ def summarize_sphere_scenarios(xtab: pd.DataFrame) -> Dict[str, int]:
 
     for sph_label in sphere_labels:
         row = xtab_det.loc[sph_label]
+        # If index labels are duplicated and weren't aggregated for some reason,
+        # `.loc` can return a DataFrame. Collapse it to a single Series by summing.
+        if isinstance(row, pd.DataFrame):
+            row = row.sum(axis=0)
         total_sphere = int(row.sum())
         n_gts_touch = int((row > 0).sum())
 
