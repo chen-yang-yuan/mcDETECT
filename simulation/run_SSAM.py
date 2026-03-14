@@ -54,6 +54,13 @@ DEFAULT_BANDWIDTH = 2.5
 DEFAULT_SAMPLING_DISTANCE = 2.0     # previous: 1.0
 DEFAULT_FIND_LOCALMAX_SEARCH_SIZE = 3
 
+# Local-maxima filtering (original SSAM study: Park et al., Nat Commun 2021)
+# Per-gene threshold 0.027 = height of single Gaussian (used for osmFISH and VISp in paper).
+# L1-norm threshold: paper uses 0.04 (osmFISH), 0.0035 (MERFISH), 0.2 (VISp). Docs example uses 0.2.
+# https://ssam.readthedocs.io/en/develop/userguide/03-kde.html#local-maxima-search-and-normalization
+DEFAULT_MIN_NORM = 0.0035           # total gene expression (L1 norm); paper MERFISH value; osmFISH used 0.04
+DEFAULT_MIN_EXPRESSION = 0.0055     # per-gene threshold; from paper (height of single Gaussian); osmFISH used 0.027
+
 # Fixed radius for SSAM "detection spheres" (SSAM outputs cell centers only; we need sphere_r for metric_main)
 SSAM_DETECTION_RADIUS = 1.5
 
@@ -225,6 +232,8 @@ def run_ssam_one(
     sampling_distance: float,
     search_size: int,
     detection_radius: float,
+    min_norm: float | None = None,
+    min_expression: float | None = None,
     verbose: bool = False,
 ) -> None:
     """Run SSAM KDE + find_localmax for one simulation and save ssam_spheres.parquet."""
@@ -247,7 +256,13 @@ def run_ssam_one(
             bandwidth=bandwidth,
             sampling_distance=sampling_distance,
         )
-        analysis.find_localmax(search_size=search_size)
+        # Original SSAM study filters local maxima by min_norm (L1) and min_expression (per-gene)
+        kwargs = {"search_size": search_size}
+        if min_norm is not None:
+            kwargs["min_norm"] = min_norm
+        if min_expression is not None:
+            kwargs["min_expression"] = min_expression
+        analysis.find_localmax(**kwargs)
 
         spheres = ssam_localmax_to_spheres(ds, detection_radius, is_3d)
 
@@ -264,6 +279,8 @@ def run_all_ssam(
     sampling_distance: float,
     search_size: int,
     detection_radius: float,
+    min_norm: float | None = None,
+    min_expression: float | None = None,
     resume_if_done: bool = True,
     limit_n: int | None = None,
     progress_every_n: int | None = None,
@@ -315,6 +332,8 @@ def run_all_ssam(
                 sampling_distance=sampling_distance,
                 search_size=search_size,
                 detection_radius=detection_radius,
+                min_norm=min_norm,
+                min_expression=min_expression,
             )
             spheres = pd.read_parquet(spheres_parquet)
             logs.append({
@@ -349,6 +368,8 @@ logs_df = run_all_ssam(
     sampling_distance=DEFAULT_SAMPLING_DISTANCE,
     search_size=DEFAULT_FIND_LOCALMAX_SEARCH_SIZE,
     detection_radius=SSAM_DETECTION_RADIUS,
+    min_norm=DEFAULT_MIN_NORM,
+    min_expression=DEFAULT_MIN_EXPRESSION,
     resume_if_done=RESUME_IF_DONE,
     limit_n=LIMIT_N,
 )
