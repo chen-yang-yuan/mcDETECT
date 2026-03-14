@@ -42,7 +42,7 @@ os.makedirs(os.path.join(BAYSOR_OUT_ROOT, "xtabs"), exist_ok=True)
 
 # Baysor parameters (tune once then freeze)
 DEFAULT_MIN_MOLS = 30
-DEFAULT_SCALE = 30
+DEFAULT_SCALE = 3.0
 DEFAULT_THREADS = 16
 
 # Resume logic: skip if baysor_spheres.parquet already exists
