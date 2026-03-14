@@ -19,6 +19,7 @@ other_analysis/
 simulation/simulated_data/
 simulation/output/
 simulation/env/
+simulation/slurm-*.out
 
 # Figure related
 **/figures.*
