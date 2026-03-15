@@ -32,8 +32,7 @@ if [[ $# -eq 2 ]]; then
     module purge
     module load miniconda3
     eval "$(conda shell.bash hook)"
-    # conda activate ssam_hpc
-    conda activate ssam_102
+    conda activate ssam_hpc
     export PYTHONNOUSERSITE=1
     echo "Host: $(hostname)  Job: $JOB  Block: $BLOCK  PWD: $(pwd)"
     python3 run_SSAM.py --job "$JOB" --block "$BLOCK"
@@ -49,8 +48,7 @@ if [[ $# -eq 1 ]]; then
         module purge
         module load miniconda3
         eval "$(conda shell.bash hook)"
-        # conda activate ssam_hpc
-        conda activate ssam_102
+        conda activate ssam_hpc
         export PYTHONNOUSERSITE=1
         echo "Host: $(hostname)  Eval-only run  PWD: $(pwd)"
         python3 run_SSAM.py
@@ -64,8 +62,7 @@ if [[ $# -eq 1 ]]; then
     module purge
     module load miniconda3
     eval "$(conda shell.bash hook)"
-    # conda activate ssam_hpc
-    conda activate ssam_102
+    conda activate ssam_hpc
     export PYTHONNOUSERSITE=1
     echo "Host: $(hostname)  Job: $JOB  PWD: $(pwd)"
     python3 run_SSAM.py --job "$JOB"
@@ -75,7 +72,25 @@ fi
 
 # ---------- No args: submit 4×20 block jobs ----------
 
-for JOB in A B C all; do
+# for JOB in A B C all; do
+#   for BLOCK in $(seq 1 20); do
+#     sbatch --job-name="SSAM_${JOB}_${BLOCK}" \
+#            --output="logs/SSAM_${JOB}_block${BLOCK}_%j.out" \
+#            --error="logs/SSAM_${JOB}_block${BLOCK}_%j.err" \
+#            --time=240:00:00 \
+#            --mem=200G \
+#            --cpus-per-task=16 \
+#            --partition=nodes \
+#            --mail-type=END,FAIL \
+#            --mail-user=cyuan36@emory.edu \
+#            "$0" "$JOB" "$BLOCK"
+#   done
+# done
+
+# echo "Submitted 4×20 block jobs (A,B,C,all; blocks 1–20). After they finish, run:"
+# echo "  sbatch run_SSAM.sh eval"
+
+for JOB in all; do
   for BLOCK in $(seq 1 20); do
     sbatch --job-name="SSAM_${JOB}_${BLOCK}" \
            --output="logs/SSAM_${JOB}_block${BLOCK}_%j.out" \
@@ -89,6 +104,5 @@ for JOB in A B C all; do
            "$0" "$JOB" "$BLOCK"
   done
 done
-
-echo "Submitted 4×20 block jobs (A,B,C,all; blocks 1–20). After they finish, run:"
+echo "Submitted 1×20 block jobs (multi-marker 3D all; blocks 1–20). After they finish, run:"
 echo "  sbatch run_SSAM.sh eval"
