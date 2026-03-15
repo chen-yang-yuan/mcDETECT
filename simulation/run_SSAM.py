@@ -180,6 +180,52 @@ def simulated_to_ssam_df(sim_parquet: str, is_3d: bool) -> pd.DataFrame:
         out["z"] = 0.0
     return out
 
+def simulated_to_ssam_inputs(sim_parquet: str, is_3d: bool):
+    """
+    Convert simulated parquet to old SSAM 1.0.2 inputs:
+      genes: list[str]
+      locations: list[np.ndarray], one array per gene
+      width, height, depth: spatial extent
+    """
+    df = pd.read_parquet(sim_parquet).reset_index(drop=True)
+
+    if "x" in df.columns and "y" in df.columns and "gene" in df.columns:
+        x_col, y_col, z_col, gene_col = "x", "y", "z", "gene"
+    elif "global_x" in df.columns and "global_y" in df.columns and "target" in df.columns:
+        x_col, y_col, z_col, gene_col = "global_x", "global_y", "global_z", "target"
+    else:
+        raise ValueError(
+            f"{sim_parquet}: need (x,y,z,gene) or (global_x,global_y,global_z,target). "
+            f"Got: {list(df.columns)}"
+        )
+
+    df = df[[x_col, y_col, gene_col] + ([z_col] if z_col in df.columns else [])].copy()
+    df[x_col] = df[x_col].astype(float)
+    df[y_col] = df[y_col].astype(float)
+    df[gene_col] = df[gene_col].astype(str)
+
+    if is_3d and z_col in df.columns:
+        df[z_col] = df[z_col].astype(float)
+    else:
+        df[z_col] = 0.0
+
+    genes = sorted(df[gene_col].unique().tolist())
+    locations = []
+
+    for g in genes:
+        sub = df[df[gene_col] == g]
+        if is_3d:
+            arr = sub[[x_col, y_col, z_col]].to_numpy(dtype=float)
+        else:
+            arr = sub[[x_col, y_col]].to_numpy(dtype=float)
+        locations.append(arr)
+
+    width = float(df[x_col].max()) + 1.0
+    height = float(df[y_col].max()) + 1.0
+    depth = float(df[z_col].max()) + 1.0 if is_3d else 1.0
+
+    return genes, locations, width, height, depth
+
 
 # ==================== Output path mapping (mirror directory layout) ==================== #
 
@@ -198,21 +244,89 @@ SSAM is segmentation-free: it builds a gene-expression vector field via KDE and 
 and assign a fixed radius for evaluation with metric_main (same protocol as Baysor spheres). No clustering or cell-type mapping is applied for this benchmark.
 """
 
-def ssam_localmax_to_spheres(dataset, detection_radius: float, is_3d: bool) -> pd.DataFrame:
+# def ssam_localmax_to_spheres(dataset, detection_radius: float, is_3d: bool) -> pd.DataFrame:
+#     """
+#     Get physical coordinates of SSAM local maxima and build a sphere table (sphere_x, sphere_y, sphere_z, sphere_r).
+#     dataset.local_maxs are grid indices; vf_params[0] is sampling_distance.
+#     """
+#     lm = dataset.local_maxs
+#     if lm is None or len(lm[0]) == 0:
+#         return pd.DataFrame(columns=["sphere_x", "sphere_y", "sphere_z", "sphere_r"])
+
+#     sampling = float(dataset.zarr_group["vf_params"][0])
+#     # Grid indices -> physical coordinates (SSAM uses order consistent with vf shape: width, height, depth)
+#     x_phys = np.array(lm[0], dtype=float) * sampling
+#     y_phys = np.array(lm[1], dtype=float) * sampling
+#     if is_3d and len(lm) >= 3:
+#         z_phys = np.array(lm[2], dtype=float) * sampling
+#     else:
+#         z_phys = np.zeros_like(x_phys)
+
+#     return pd.DataFrame({
+#         "sphere_x": x_phys,
+#         "sphere_y": y_phys,
+#         "sphere_z": z_phys,
+#         "sphere_r": detection_radius,
+#     })
+
+# def run_ssam_one(
+#     sim_parquet: str,
+#     out_dir: str,
+#     spheres_parquet: str,
+#     is_3d: bool,
+#     bandwidth: float,
+#     sampling_distance: float,
+#     search_size: int,
+#     detection_radius: float,
+#     min_norm: float | None = None,
+#     min_expression: float | None = None,
+#     verbose: bool = False,
+# ) -> None:
+#     """Run SSAM KDE + find_localmax for one simulation and save ssam_spheres.parquet."""
+#     df = simulated_to_ssam_df(sim_parquet, is_3d)
+#     width = float(df["x"].max())
+#     height = float(df["y"].max())
+#     depth = float(df["z"].max()) + 1.0 if is_3d else 1.0
+
+#     Path(out_dir).mkdir(parents=True, exist_ok=True)
+
+#     with tempfile.TemporaryDirectory() as tmpdir:
+#         ds = ssam.SSAMDataset(tmpdir)
+#         analysis = ssam.SSAMAnalysis(ds, verbose=verbose)
+#         # run_kde expects DataFrame with columns x, y, gene (and z for 3D)
+#         analysis.run_kde(
+#             df,
+#             width=width,
+#             height=height,
+#             depth=depth,
+#             bandwidth=bandwidth,
+#             sampling_distance=sampling_distance,
+#         )
+#         # Original SSAM study filters local maxima by min_norm (L1) and min_expression (per-gene)
+#         kwargs = {"search_size": search_size}
+#         if min_norm is not None:
+#             kwargs["min_norm"] = min_norm
+#         if min_expression is not None:
+#             kwargs["min_expression"] = min_expression
+#         analysis.find_localmax(**kwargs)
+
+#         spheres = ssam_localmax_to_spheres(ds, detection_radius, is_3d)
+
+#     spheres.to_parquet(spheres_parquet, index=False)
+
+def ssam_localmax_to_spheres(dataset, sampling_distance: float, detection_radius: float, is_3d: bool) -> pd.DataFrame:
     """
-    Get physical coordinates of SSAM local maxima and build a sphere table (sphere_x, sphere_y, sphere_z, sphere_r).
-    dataset.local_maxs are grid indices; vf_params[0] is sampling_distance.
+    Convert SSAM 1.0.2 local maxima (grid indices) to physical coordinates.
     """
-    lm = dataset.local_maxs
+    lm = getattr(dataset, "local_maxs", None)
     if lm is None or len(lm[0]) == 0:
         return pd.DataFrame(columns=["sphere_x", "sphere_y", "sphere_z", "sphere_r"])
 
-    sampling = float(dataset.zarr_group["vf_params"][0])
-    # Grid indices -> physical coordinates (SSAM uses order consistent with vf shape: width, height, depth)
-    x_phys = np.array(lm[0], dtype=float) * sampling
-    y_phys = np.array(lm[1], dtype=float) * sampling
+    x_phys = np.array(lm[0], dtype=float) * sampling_distance
+    y_phys = np.array(lm[1], dtype=float) * sampling_distance
+
     if is_3d and len(lm) >= 3:
-        z_phys = np.array(lm[2], dtype=float) * sampling
+        z_phys = np.array(lm[2], dtype=float) * sampling_distance
     else:
         z_phys = np.zeros_like(x_phys)
 
@@ -236,36 +350,43 @@ def run_ssam_one(
     min_expression: float | None = None,
     verbose: bool = False,
 ) -> None:
-    """Run SSAM KDE + find_localmax for one simulation and save ssam_spheres.parquet."""
-    df = simulated_to_ssam_df(sim_parquet, is_3d)
-    width = float(df["x"].max())
-    height = float(df["y"].max())
-    depth = float(df["z"].max()) + 1.0 if is_3d else 1.0
+    """Run SSAM 1.0.2 KDE + find_localmax for one simulation and save ssam_spheres.parquet."""
+    genes, locations, width, height, depth = simulated_to_ssam_inputs(sim_parquet, is_3d)
 
     Path(out_dir).mkdir(parents=True, exist_ok=True)
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        ds = ssam.SSAMDataset(tmpdir)
-        analysis = ssam.SSAMAnalysis(ds, verbose=verbose)
-        # run_kde expects DataFrame with columns x, y, gene (and z for 3D)
-        analysis.run_kde(
-            df,
-            width=width,
-            height=height,
-            depth=depth,
-            bandwidth=bandwidth,
-            sampling_distance=sampling_distance,
-        )
-        # Original SSAM study filters local maxima by min_norm (L1) and min_expression (per-gene)
-        kwargs = {"search_size": search_size}
-        if min_norm is not None:
-            kwargs["min_norm"] = min_norm
-        if min_expression is not None:
-            kwargs["min_expression"] = min_expression
-        analysis.find_localmax(**kwargs)
+    ds = ssam.SSAMDataset(
+        genes=genes,
+        locations=locations,
+        width=width,
+        height=height,
+        depth=depth,
+    )
+    analysis = ssam.SSAMAnalysis(ds, verbose=verbose)
 
-        spheres = ssam_localmax_to_spheres(ds, detection_radius, is_3d)
+    analysis.run_kde(
+        bandwidth=bandwidth,
+        sampling_distance=sampling_distance,
+    )
+    
+    ds.vf_norm = np.linalg.norm(ds.vf, ord=1, axis=-1)
 
+    kwargs = {"search_size": search_size}
+    if min_norm is not None:
+        kwargs["min_norm"] = min_norm
+    if min_expression is not None:
+        kwargs["min_expression"] = min_expression
+
+    analysis.find_localmax(**kwargs)
+    
+    print("vf shape:", ds.vf.shape, flush=True)
+    print("vf_norm shape:", ds.vf_norm.shape, flush=True)
+    print("n local maxima:", len(ds.local_maxs[0]), flush=True)
+
+    spheres = ssam_localmax_to_spheres(dataset=ds,
+                                       sampling_distance=sampling_distance,
+                                       detection_radius=detection_radius,
+                                       is_3d=is_3d)
     spheres.to_parquet(spheres_parquet, index=False)
 
 
