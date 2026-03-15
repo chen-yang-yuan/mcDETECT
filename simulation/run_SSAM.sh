@@ -32,7 +32,8 @@ if [[ $# -eq 2 ]]; then
     module purge
     module load miniconda3
     eval "$(conda shell.bash hook)"
-    conda activate ssam_hpc
+    # conda activate ssam_hpc
+    conda activate ssam_102
     export PYTHONNOUSERSITE=1
     echo "Host: $(hostname)  Job: $JOB  Block: $BLOCK  PWD: $(pwd)"
     python3 run_SSAM.py --job "$JOB" --block "$BLOCK"
@@ -48,7 +49,8 @@ if [[ $# -eq 1 ]]; then
         module purge
         module load miniconda3
         eval "$(conda shell.bash hook)"
-        conda activate ssam_hpc
+        # conda activate ssam_hpc
+        conda activate ssam_102
         export PYTHONNOUSERSITE=1
         echo "Host: $(hostname)  Eval-only run  PWD: $(pwd)"
         python3 run_SSAM.py
@@ -62,7 +64,8 @@ if [[ $# -eq 1 ]]; then
     module purge
     module load miniconda3
     eval "$(conda shell.bash hook)"
-    conda activate ssam_hpc
+    # conda activate ssam_hpc
+    conda activate ssam_102
     export PYTHONNOUSERSITE=1
     echo "Host: $(hostname)  Job: $JOB  PWD: $(pwd)"
     python3 run_SSAM.py --job "$JOB"
