@@ -268,7 +268,7 @@ def main():
     base_out = "output"
     methods = {
         # "mcDETECT": os.path.join(base_out, "mcDETECT_output", "xtabs"),
-        "Baysor": os.path.join(base_out, "Baysor_output_30_30", "xtabs"),
+        "Baysor": os.path.join(base_out, "Baysor_output", "xtabs"),
         # "SSAM": os.path.join(base_out, "SSAM_output", "xtabs"),
     }
 
