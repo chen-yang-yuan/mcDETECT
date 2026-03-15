@@ -55,9 +55,13 @@ DEFAULT_SAMPLING_DISTANCE = 2.0     # previous: 1.0
 DEFAULT_FIND_LOCALMAX_SEARCH_SIZE = 3
 
 # Optional local-max thresholds (pnucolab/ssam: set_thresholds before find_localmax).
-# None = use bandwidth-derived defaults. MERFISH (Park et al.): expression=0.0055, norm=0.0035.
-DEFAULT_EXPRESSION_THRESHOLD = 0.0055  # e.g. 0.0055 for MERFISH-style
-DEFAULT_NORM_THRESHOLD = 0.0035        # e.g. 0.0035 for MERFISH-style
+# None = use bandwidth-derived defaults. Park et al. Nat Commun 2021 / ReadTheDocs:
+#   osmFISH (SSp):  expression=0.027, norm=0.04   (height of 1 Gaussian; moderate filter)
+#   MERFISH (POA): expression=0.0055, norm=0.0035 (weakest; few local maxima removed)
+#   VISp (smFISH): expression=0.027, norm=0.2     (docs example; strongest norm filter)
+# Use higher values to remove more weak local maxima.
+DEFAULT_EXPRESSION_THRESHOLD = 0.027   # osmFISH/VISp; use 0.0055 for MERFISH-style
+DEFAULT_NORM_THRESHOLD = 0.04         # osmFISH; use 0.0035 (MERFISH) or 0.2 (VISp) for more/less
 
 # Fixed radius for SSAM "detection spheres" (SSAM outputs cell centers only; we need sphere_r for metric_main)
 SSAM_DETECTION_RADIUS = 1.5
