@@ -61,7 +61,7 @@ DEFAULT_FIND_LOCALMAX_SEARCH_SIZE = 3
 #   VISp (smFISH): expression=0.027, norm=0.2     (docs example; strongest norm filter)
 # Use higher values to remove more weak local maxima.
 DEFAULT_EXPRESSION_THRESHOLD = 0.027   # osmFISH/VISp; use 0.0055 for MERFISH-style
-DEFAULT_NORM_THRESHOLD = 0.2         # osmFISH; use 0.0035 (MERFISH) or 0.2 (VISp) for more/less
+DEFAULT_NORM_THRESHOLD = 0.1         # osmFISH; use 0.0035 (MERFISH) or 0.2 (VISp) for more/less
 
 # Fixed radius for SSAM "detection spheres" (SSAM outputs cell centers only; we need sphere_r for metric_main)
 SSAM_DETECTION_RADIUS = 1.5
