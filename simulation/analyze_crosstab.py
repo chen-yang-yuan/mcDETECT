@@ -267,9 +267,9 @@ def summarize_across_seeds(
 def main():
     base_out = "output"
     methods = {
-        # "mcDETECT": os.path.join(base_out, "mcDETECT_output", "xtabs"),
+        "mcDETECT": os.path.join(base_out, "mcDETECT_output", "xtabs"),
         "Baysor": os.path.join(base_out, "Baysor_output", "xtabs"),
-        # "SSAM": os.path.join(base_out, "SSAM_output", "xtabs"),
+        "SSAM": os.path.join(base_out, "SSAM_output", "xtabs"),
     }
 
     for method_name, xtab_dir in methods.items():
