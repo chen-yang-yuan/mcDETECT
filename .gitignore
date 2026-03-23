@@ -1,4 +1,4 @@
-# Previous and reference code
+# Previous codes
 code/old/
 code/utils/baysor_macos-latest_x64_build
 
@@ -17,7 +17,6 @@ other_analysis/
 # Simulation related
 simulation/simulated_data/
 simulation/output/
-simulation/env/
 simulation/_main1_JH.py
 
 # Figure related
