@@ -1,77 +1,48 @@
 import glob
 import os
 import pandas as pd
-from typing import Dict, List
+from typing import Any, Dict, List
 
 
 ROW_SHARE_THRESHOLD = 0.5
 
 
-def load_xtab(path: str) -> pd.DataFrame:
-    """
-    Load a cross-table CSV saved by the simulation scripts.
+def _scalar_prob(prob: pd.DataFrame, row: Any, col: Any) -> float:
+    v = prob.loc[row, col]
+    if isinstance(v, pd.Series):
+        v = v.iloc[0]
+    return float(0.0 if pd.isna(v) else v)
 
-    Assumes:
-      - Rows: spheres + last row 'no_sphere'
-      - Columns: GT aggregates + last column 'no_gt'
-      - Index column saved in the first CSV column.
-    """
+
+def load_xtab(path: str) -> pd.DataFrame:
     return pd.read_csv(path)
 
 
-def summarize_sphere_matches(
-    xtab: pd.DataFrame, share_threshold: float = ROW_SHARE_THRESHOLD
-) -> Dict[str, int]:
-    """
-    Advisor-style simplification:
-      - For each GT column, pick argmax sphere row among detection rows.
-      - Keep the match only if purity share > 0.5.
+def summarize_sphere_matches(xtab: pd.DataFrame, share_threshold: float = ROW_SHARE_THRESHOLD) -> Dict[str, int]:
 
-    Purity share:
-      share = count(sphere, gt) / sum_all_columns(sphere_row)
+    df = xtab.copy()
+    prob = df.div(df.sum(axis=1), axis=0)
 
-    Output categories over detection spheres:
-      - no_match_or_low_purity
-      - good_match_high_purity
-    """
-    # Detection sphere rows (exclude final "no_sphere" row).
-    sph_rows = xtab.iloc[:-1, :].copy()
-    # GT columns (exclude final "no_gt" column).
-    gt_cols = xtab.columns[:-1].tolist()
+    all_cols = df.columns.tolist()
+    good_count = 0
 
-    good_spheres = set()
-
-    for gt_col in gt_cols:
-        col_vals = sph_rows[gt_col]
-        if float(col_vals.sum()) <= 0:
-            continue
-
-        sph_idx = col_vals.idxmax()
-        row_sum = float(sph_rows.loc[sph_idx].sum())
-        if row_sum <= 0:
-            continue
-
-        share = float(sph_rows.loc[sph_idx, gt_col]) / row_sum
+    for col in all_cols:
+        col_vals = df[col]
+        j = col_vals.idxmax()
+        share = _scalar_prob(prob, j, col)
         if share > share_threshold:
-            good_spheres.add(sph_idx)
+            good_count += 1
 
-    total_spheres = int(sph_rows.shape[0])
-    good_count = int(len(good_spheres))
-    bad_count = int(total_spheres - good_count)
+    bad_count = df.shape[0] - good_count
 
     return {
-        "no_match_or_low_purity": bad_count,
-        "good_match_high_purity": good_count,
+        "no_match_or_low_purity": int(bad_count),
+        "good_match_high_purity": int(good_count),
     }
 
 
 def summarize_across_seeds(xtab_dir: str) -> pd.DataFrame:
-    """
-    Read all seed xtabs under one method and compute per-seed sphere counts.
-
-    Returns:
-      - sphere_matrix: index = seed, columns = simplified sphere categories
-    """
+    
     pattern = os.path.join(xtab_dir, "multi_marker_3D_all_5000_1000_seed_*_xtab.csv")
     paths = sorted(glob.glob(pattern))
     if not paths:
@@ -117,7 +88,7 @@ def main():
         print(f"[{method_name}] summarizing crosstabs in {xtab_dir} ...")
         sphere_matrix = summarize_across_seeds(xtab_dir)
 
-        sphere_path = os.path.join(xtab_dir, f"{method_name}_sphere_scenarios_by_seed_3.csv")
+        sphere_path = os.path.join(xtab_dir, f"{method_name}_sphere_scenarios_by_seed_4.csv")
         sphere_matrix.to_csv(sphere_path)
 
         print(f"[{method_name}] sphere per-seed counts saved to {sphere_path}")
