@@ -224,9 +224,9 @@ granule_adata.write_h5ad(comparison_path + "neuropil_subdomains_granule_adata.h5
 spots = subdivide_spots(spots_raw)
 spots = fill_spot_expression(spots, transcripts, grid_len=25.0, assign_to="X")
 
-spots_WT_enhanced = subdivide_spots(spots_WT)
+spots_WT_enhanced = subdivide_spots(spots_WT_raw)
 spots_WT_enhanced = fill_spot_expression(spots_WT_enhanced, transcripts_WT_raw, grid_len=25.0, assign_to="X")
-spots_AD_enhanced = subdivide_spots(spots_AD)
+spots_AD_enhanced = subdivide_spots(spots_AD_raw)
 spots_AD_enhanced = fill_spot_expression(spots_AD_enhanced, transcripts_AD_raw, grid_len=25.0, assign_to="X")
 
 # Extrasomatic transcripts
