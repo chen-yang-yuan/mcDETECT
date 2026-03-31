@@ -39,7 +39,7 @@ def subdivide_spots(spots_raw: "sc.AnnData", sub_um: float = 25.0) -> "sc.AnnDat
         out.uns = dict(spots_raw.uns)
     return out
 
-def fill_spot_expression(spots: "sc.AnnData", transcripts: pd.DataFrame, grid_len: float = 25.0, gene_col: str = "target",x_col: str = "global_x", y_col: str = "global_y", batch_col: str = "batch", inplace: bool = True, assign_to: str = "all_transcripts", tx_chunk: int = 65_536, spot_chunk: int = 512) -> "sc.AnnData":
+def fill_spot_expression(spots: "sc.AnnData", transcripts: pd.DataFrame, grid_len: float = 25.0, gene_col: str = "target", spots_x_col: str = "global_x", spots_y_col: str = "global_y", transcripts_x_col = "global_x", transcripts_y_col = "global_y", batch_col: str = "batch", inplace: bool = True, assign_to: str = "X", tx_chunk: int = 65_536, spot_chunk: int = 512) -> "sc.AnnData":
     
     """Assign each transcript to spot tiles by exact axis-aligned containment (half-open intervals).
 
@@ -62,8 +62,8 @@ def fill_spot_expression(spots: "sc.AnnData", transcripts: pd.DataFrame, grid_le
     half = float(grid_len) / 2.0
     genes = list(spots.var_names)
     gene_to_idx = {g: i for i, g in enumerate(genes)}
-    cx = spots.obs[x_col].to_numpy(dtype=float)
-    cy = spots.obs[y_col].to_numpy(dtype=float)
+    cx = spots.obs[spots_x_col].to_numpy(dtype=float)
+    cy = spots.obs[spots_y_col].to_numpy(dtype=float)
     bsp = spots.obs[batch_col].astype(str).to_numpy()
     n_obs, n_vars = spots.n_obs, spots.n_vars
     X = np.zeros((n_obs, n_vars), dtype=np.float64)
@@ -82,8 +82,8 @@ def fill_spot_expression(spots: "sc.AnnData", transcripts: pd.DataFrame, grid_le
             rows = np.flatnonzero(bsp == bs)
             if rows.size == 0:
                 continue
-            tx_all = t_b[x_col].to_numpy(dtype=float)
-            ty_all = t_b[y_col].to_numpy(dtype=float)
+            tx_all = t_b[transcripts_x_col].to_numpy(dtype=float)
+            ty_all = t_b[transcripts_y_col].to_numpy(dtype=float)
             cx_b = cx[rows]
             cy_b = cy[rows]
             counts = np.zeros(rows.size, dtype=np.float64)
@@ -117,8 +117,11 @@ def fill_spot_expression(spots: "sc.AnnData", transcripts: pd.DataFrame, grid_le
 # ==================== Read data ==================== #
 
 # -------------------- Spots -------------------- #
-spots_WT = sc.read_h5ad(f"../data/MERSCOPE_WT_1/processed_data/spots.h5ad")
-spots_AD = sc.read_h5ad(f"../data/MERSCOPE_AD_1/processed_data/spots.h5ad")
+spots_WT_raw = sc.read_h5ad(f"../data/MERSCOPE_WT_1/processed_data/spots.h5ad")
+spots_AD_raw = sc.read_h5ad(f"../data/MERSCOPE_AD_1/processed_data/spots.h5ad")
+
+spots_WT = spots_WT_raw.copy()
+spots_AD = spots_AD_raw.copy()
 
 # Adjust coordinates
 spots_WT.obs["global_x"] = spots_WT.obs["global_y_new"].copy()
@@ -132,6 +135,9 @@ spots_AD.obs["global_y"] += 7200
 # Merge spots
 spots_dict = {"MERSCOPE_WT_1": spots_WT, "MERSCOPE_AD_1": spots_AD}
 spots_raw = anndata.concat(spots_dict, axis = 0, merge = "same", label = "batch")
+
+del spots_WT
+del spots_AD
 
 # -------------------- Cells -------------------- #
 adata_1 = sc.read_h5ad(f"../data/MERSCOPE_WT_1/processed_data/adata.h5ad")
@@ -155,7 +161,8 @@ adata.write_h5ad(comparison_path + "neuropil_subdomains_adata.h5ad")
 theta_WT = 10 * np.pi / 180
 theta_AD = 170 * np.pi / 180
 
-transcripts_WT = pd.read_parquet(f"../data/MERSCOPE_WT_1/processed_data/transcripts.parquet")
+transcripts_WT_raw = pd.read_parquet(f"../data/MERSCOPE_WT_1/processed_data/transcripts.parquet")
+transcripts_WT = transcripts_WT_raw.copy()
 rotation_matrix = np.array([[np.cos(theta_WT), np.sin(theta_WT)], [-np.sin(theta_WT), np.cos(theta_WT)]])
 coords = transcripts_WT[["global_y", "global_x"]].to_numpy()
 transformed_coords = coords @ rotation_matrix.T
@@ -169,7 +176,8 @@ transcripts_WT["global_y"] = transcripts_WT["global_x_new"].copy()
 del transcripts_WT["global_x_new"]
 del transcripts_WT["global_y_new"]
 
-transcripts_AD = pd.read_parquet(f"../data/MERSCOPE_AD_1/processed_data/transcripts.parquet")
+transcripts_AD_raw = pd.read_parquet(f"../data/MERSCOPE_AD_1/processed_data/transcripts.parquet")
+transcripts_AD = transcripts_AD_raw.copy()
 rotation_matrix = np.array([[np.cos(theta_AD), np.sin(theta_AD)], [-np.sin(theta_AD), np.cos(theta_AD)]])
 coords = transcripts_AD[["global_x", "global_y"]].to_numpy()
 transformed_coords = coords @ rotation_matrix.T
@@ -189,6 +197,9 @@ transcripts_WT["batch"] = "MERSCOPE_WT_1"
 transcripts_AD["batch"] = "MERSCOPE_AD_1"
 transcripts = pd.concat([transcripts_WT, transcripts_AD], axis = 0)
 transcripts.to_parquet(comparison_path + "neuropil_subdomains_transcripts.parquet")
+
+del transcripts_WT
+del transcripts_AD
 
 # -------------------- Granules -------------------- #
 granule_adata = sc.read_h5ad(comparison_path + "granule_adata_tsne.h5ad")
@@ -213,9 +224,22 @@ granule_adata.write_h5ad(comparison_path + "neuropil_subdomains_granule_adata.h5
 spots = subdivide_spots(spots_raw)
 spots = fill_spot_expression(spots, transcripts, grid_len=25.0, assign_to="X")
 
+spots_WT_enhanced = subdivide_spots(spots_WT)
+spots_WT_enhanced = fill_spot_expression(spots_WT_enhanced, transcripts_WT_raw, grid_len=25.0, assign_to="X")
+spots_AD_enhanced = subdivide_spots(spots_AD)
+spots_AD_enhanced = fill_spot_expression(spots_AD_enhanced, transcripts_AD_raw, grid_len=25.0, assign_to="X")
+
 # Extrasomatic transcripts
 transcripts_extrasomatic = transcripts[transcripts["overlaps_nucleus"] == 0]
 spots = fill_spot_expression(spots, transcripts_extrasomatic, grid_len=25.0, assign_to="extrasomatic_transcripts")
 
+transcripts_extrasomatic_WT = transcripts_WT_raw[transcripts_WT_raw["overlaps_nucleus"] == 0]
+spots_WT_enhanced = fill_spot_expression(spots_WT_enhanced, transcripts_extrasomatic_WT, grid_len=25.0, assign_to="extrasomatic_transcripts")
+
+transcripts_extrasomatic_AD = transcripts_AD_raw[transcripts_AD_raw["overlaps_nucleus"] == 0]
+spots_AD_enhanced = fill_spot_expression(spots_AD_enhanced, transcripts_extrasomatic_AD, grid_len=25.0, assign_to="extrasomatic_transcripts")
+
 # Save results
 spots.write_h5ad(comparison_path + "neuropil_subdomains_spots.h5ad")
+spots_WT_enhanced.write_h5ad(comparison_path + "neuropil_subdomains_spots_WT_enhanced.h5ad")
+spots_AD_enhanced.write_h5ad(comparison_path + "neuropil_subdomains_spots_AD_enhanced.h5ad")
