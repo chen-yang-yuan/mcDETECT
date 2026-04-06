@@ -198,19 +198,34 @@ del transcripts_AD
 
 # -------------------- Granules -------------------- #
 granule_adata = sc.read_h5ad(comparison_path + "granule_adata_tsne.h5ad")
-granule_subtype_df = pd.read_parquet(comparison_path + "granule_subtype_labels_granule_adata_tsne.parquet")
-granule_subtype_df.index = granule_subtype_df.index.astype(str)
-granule_adata.obs["granule_subtype_kmeans"] = granule_subtype_df["granule_subtype_kmeans"].astype("category")
-granule_adata.obs["granule_subtype_manual"] = granule_subtype_df["granule_subtype_manual"].astype("category")
-granule_adata.obs["granule_subtype"] = granule_subtype_df["granule_subtype_manual_simple"].astype("category")
 
 # Adjust coordinates
 granule_adata.obs["global_x"] = granule_adata.obs["global_x_adjusted"].copy()
 granule_adata.obs["global_y"] = granule_adata.obs["global_y_adjusted"].copy()
-
-# Manually adjust the x-axis for WT sample
 mask = granule_adata.obs["batch"] == "MERSCOPE_WT_1"
 granule_adata.obs.loc[mask, "global_x"] = (6250 - granule_adata.obs.loc[mask, "global_x"])
+
+# Read granule subtype labels
+granule_subtype_df = pd.read_parquet(comparison_path + "granule_subtype_labels_granule_adata_tsne.parquet")
+cols_keep = ["sample", "granule_id", "granule_subtype_kmeans", "granule_subtype_manual", "granule_subtype_manual_simple"]
+granule_subtype_df = granule_subtype_df[cols_keep].drop_duplicates(["sample", "granule_id"])
+
+# Merge granule subtype labels
+granule_adata.obs = granule_adata.obs.reset_index(names="obs_name")
+granule_adata.obs = granule_adata.obs.merge(granule_subtype_df,
+                                            left_on=["batch", "granule_id"],
+                                            right_on=["sample", "granule_id"],
+                                            how="left",
+                                            validate="one_to_one").set_index("obs_name")
+if "sample" in granule_adata.obs.columns:
+    granule_adata.obs = granule_adata.obs.drop(columns=["sample"])
+
+# Convert granule subtype labels to category
+granule_adata.obs["granule_subtype_kmeans"] = granule_adata.obs["granule_subtype_kmeans"].astype("category")
+granule_adata.obs["granule_subtype_manual"] = granule_adata.obs["granule_subtype_manual"].astype("category")
+granule_adata.obs["granule_subtype"] = granule_adata.obs["granule_subtype_manual_simple"].astype("category")
+
+# Save results
 granule_adata.write_h5ad(comparison_path + "neuropil_subdomains_granule_adata.h5ad")
 
 # ==================== Enhance spatial resolution ==================== #
