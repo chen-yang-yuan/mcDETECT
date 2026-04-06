@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 from scipy.spatial import cKDTree
 from scipy import sparse
+from sklearn.preprocessing import OneHotEncoder
+from mcDETECT.utils import *
 
 
 def spot_embedding(
@@ -272,7 +274,7 @@ def spot_embedding(
     return subtype_counts, subtype_feature_names, aux_features, spot_gene_counts
 
 
-def spot_embedding_granule_subtype_kernel_grid(
+def spot_embedding_soft(
     spots,
     granule_adata,
     adata=None,
@@ -471,260 +473,57 @@ def spot_embedding_granule_subtype_kernel_grid(
     return subtype_counts, subtype_feature_names, aux_features, spot_gene_counts
 
 
-def spot_embedding_spatial_weight(
-    spots,
-    granule_adata,
-    adata=None,
-    spot_loc_key=("global_x", "global_y"),
-    spot_width=25.0,
-    spot_height=25.0,
-    granule_loc_key=("global_x", "global_y"),
-    granule_subtype_key="granule_subtype",
-    subtype_names=("pre-syn", "post-syn", "dendrites", "mixed"),
-    granule_count_layer="counts",
-    cell_loc_key=("global_x", "global_y"),
-    include_soma_features=False,
-    neighbor_mode="radius",   # {"radius", "grid_window"}
-    radius=10.0,
-    sigma=5.0,
-    kernel="gaussian",        # {"gaussian", "exponential", "uniform"}
-    include_padding_category=False,
-    padding_value="others",
-    normalize_subtype_embedding=True,
-    normalize_gene_counts=False,
-):
-    """
-    Spot-centered local weighted embedding, analogous to neuron_embedding_spatial_weight.
+def neuron_embedding_spatial_weight(adata_neuron, granule_adata, radius = 10, sigma = 10, loc_key = ["global_x", "global_y"], gnl_subtype_key = "granule_subtype_kmeans", padding_value = "Others"):
+    
+    adata_neuron = adata_neuron.copy()
+    granule_adata = granule_adata.copy()
+    
+    # neuron and granule coordinates, granule subtypes
+    neuron_coords = adata_neuron.obs[loc_key].to_numpy()
+    granule_coords = granule_adata.obs[loc_key].to_numpy()
+    granule_subtypes = granule_adata.obs[gnl_subtype_key].astype(str).to_numpy()
+    
+    # include padding category
+    unique_subtypes = np.unique(granule_subtypes).tolist()
+    if padding_value not in unique_subtypes:
+        unique_subtypes.append(padding_value)
+    
+    encoder = OneHotEncoder(categories = [unique_subtypes], sparse_output = False, handle_unknown = "ignore")
+    encoder.fit(np.array(unique_subtypes).reshape(-1, 1))
+    S = len(unique_subtypes)
+    
+    # k-d tree
+    tree = make_tree(d1 = granule_coords[:, 0], d2 = granule_coords[:, 1])
+    all_neighbors = tree.query_ball_point(neuron_coords, r = radius)
+    
+    # initialize output
+    n_neurons = neuron_coords.shape[0]
+    embeddings = np.zeros((n_neurons, S), dtype = float)
+    
+    # NEW: store number of granules per neuron
+    granule_counts = np.zeros(n_neurons, dtype=int)
 
-    Compared with spot_embedding_granule_subtype_counts:
-    - anchor is the spot center
-    - neighborhood is defined around the spot center
-    - granules contribute with distance weights
-    - optionally adds a padding category when no neighbors are found
+    for i, neighbor_indices in enumerate(all_neighbors):
+        # NEW: count neighbors
+        granule_counts[i] = len(neighbor_indices)
 
-    Parameters
-    ----------
-    spots : AnnData
-        Spot/grid-level AnnData with centroid coordinates.
-    granule_adata : AnnData
-        Granule-level AnnData.
-    adata : AnnData, optional
-        Cell-level AnnData for soma features.
-    neighbor_mode : {"radius", "grid_window"}
-        "radius": use Euclidean radius around each spot center.
-        "grid_window": use the spot rectangle as the neighborhood support,
-            i.e. centered box of width spot_width and height spot_height.
-    radius : float
-        Radius when neighbor_mode="radius".
-    sigma : float
-        Kernel scale.
-    kernel : {"gaussian", "exponential", "uniform"}
-        Weight function within the chosen neighborhood.
-    include_padding_category : bool
-        If True, adds a padding subtype when a spot has no nearby granules.
+        if not neighbor_indices:
+            # no neighbors, assign to padding subtype
+            embeddings[i] = encoder.transform([[padding_value]])[0]
+            continue
 
-    Returns
-    -------
-    subtype_counts : np.ndarray, shape (n_spots, K or K+1)
-        Weighted subtype embedding matrix. If normalize_subtype_embedding=True, rows
-        are local composition vectors.
-    subtype_feature_names : list of str
-        Feature names.
-    aux_features : dict
-        Contains:
-            - "granule_count": total local weight per spot
-            - "soma_count": optional
-    spot_gene_counts : np.ndarray, shape (n_spots, n_genes)
-        Weighted aggregated gene counts per spot.
-    """
-    sx = spots.obs[spot_loc_key[0]].to_numpy(dtype=float)
-    sy = spots.obs[spot_loc_key[1]].to_numpy(dtype=float)
-    spot_coords = np.column_stack([sx, sy])
-    n_spots = spots.n_obs
+        # get neighbor subtypes and distances
+        neighbor_coords = granule_coords[neighbor_indices]
+        dists = np.linalg.norm(neuron_coords[i] - neighbor_coords, axis = 1)
+        weights = np.exp(- dists / sigma)
 
-    gx = granule_adata.obs[granule_loc_key[0]].to_numpy(dtype=float)
-    gy = granule_adata.obs[granule_loc_key[1]].to_numpy(dtype=float)
-    granule_coords = np.column_stack([gx, gy])
-    gsub = granule_adata.obs[granule_subtype_key].astype(str).to_numpy()
+        # encode subtypes to one-hot and weight them
+        subtypes = granule_subtypes[neighbor_indices]
+        onehots = encoder.transform(subtypes.reshape(-1, 1))
+        weighted_sum = (weights[:, np.newaxis] * onehots).sum(axis = 0)
 
-    subtype_names = list(subtype_names)
-    if include_padding_category and (padding_value not in subtype_names):
-        subtype_names = subtype_names + [padding_value]
+        # normalize to make it a composition vector
+        embeddings[i] = weighted_sum / weights.sum()
 
-    subtype_to_idx = {s: i for i, s in enumerate(subtype_names)}
-    K = len(subtype_names)
-
-    if granule_count_layer not in granule_adata.layers:
-        raise ValueError(f"Layer '{granule_count_layer}' not found in granule_adata.layers.")
-
-    G = granule_adata.layers[granule_count_layer]
-    n_genes = granule_adata.n_vars
-
-    def _kernel_weight(dist):
-        if kernel == "gaussian":
-            return np.exp(-(dist ** 2) / (2.0 * sigma ** 2))
-        elif kernel == "exponential":
-            return np.exp(-dist / sigma)
-        elif kernel == "uniform":
-            return np.ones_like(dist, dtype=float)
-        else:
-            raise ValueError("kernel must be one of {'gaussian', 'exponential', 'uniform'}")
-
-    subtype_counts = np.zeros((n_spots, K), dtype=float)
-    granule_counts = np.zeros(n_spots, dtype=float)
-    spot_gene_counts = np.zeros((n_spots, n_genes), dtype=float)
-
-    if neighbor_mode == "radius":
-        tree = cKDTree(granule_coords)
-        neighbor_lists = tree.query_ball_point(spot_coords, r=radius)
-
-        for i, nbrs in enumerate(neighbor_lists):
-            if len(nbrs) == 0:
-                if include_padding_category:
-                    subtype_counts[i, subtype_to_idx[padding_value]] = 1.0
-                continue
-
-            nbrs = np.asarray(nbrs, dtype=int)
-            d = np.linalg.norm(granule_coords[nbrs] - spot_coords[i], axis=1)
-            w = _kernel_weight(d)
-            wsum = w.sum()
-            granule_counts[i] = wsum
-
-            sub_i = gsub[nbrs]
-            for j, s in enumerate(sub_i):
-                if s in subtype_to_idx:
-                    subtype_counts[i, subtype_to_idx[s]] += w[j]
-
-            if sparse.issparse(G):
-                Gi = G[nbrs]
-                weighted = Gi.multiply(w[:, None])
-                spot_gene_counts[i] = np.asarray(weighted.sum(axis=0)).ravel()
-            else:
-                Gi = np.asarray(G)[nbrs]
-                spot_gene_counts[i] = (w[:, None] * Gi).sum(axis=0)
-
-    elif neighbor_mode == "grid_window":
-        # Use spot rectangle as support, but weight by distance within that window
-        granule_tree = cKDTree(granule_coords)
-        max_halfdiag = np.sqrt((spot_width / 2.0) ** 2 + (spot_height / 2.0) ** 2)
-        candidate_lists = granule_tree.query_ball_point(spot_coords, r=max_halfdiag + 1e-8)
-
-        x_min = sx - spot_width / 2.0
-        x_max = sx + spot_width / 2.0
-        y_min = sy - spot_height / 2.0
-        y_max = sy + spot_height / 2.0
-
-        for i, cand in enumerate(candidate_lists):
-            if len(cand) == 0:
-                if include_padding_category:
-                    subtype_counts[i, subtype_to_idx[padding_value]] = 1.0
-                continue
-
-            cand = np.asarray(cand, dtype=int)
-            inside = (
-                (granule_coords[cand, 0] >= x_min[i]) &
-                (granule_coords[cand, 0] <  x_max[i]) &
-                (granule_coords[cand, 1] >= y_min[i]) &
-                (granule_coords[cand, 1] <  y_max[i])
-            )
-            nbrs = cand[inside]
-
-            if len(nbrs) == 0:
-                if include_padding_category:
-                    subtype_counts[i, subtype_to_idx[padding_value]] = 1.0
-                continue
-
-            d = np.linalg.norm(granule_coords[nbrs] - spot_coords[i], axis=1)
-            w = _kernel_weight(d)
-            wsum = w.sum()
-            granule_counts[i] = wsum
-
-            sub_i = gsub[nbrs]
-            for j, s in enumerate(sub_i):
-                if s in subtype_to_idx:
-                    subtype_counts[i, subtype_to_idx[s]] += w[j]
-
-            if sparse.issparse(G):
-                Gi = G[nbrs]
-                weighted = Gi.multiply(w[:, None])
-                spot_gene_counts[i] = np.asarray(weighted.sum(axis=0)).ravel()
-            else:
-                Gi = np.asarray(G)[nbrs]
-                spot_gene_counts[i] = (w[:, None] * Gi).sum(axis=0)
-
-    else:
-        raise ValueError("neighbor_mode must be one of {'radius', 'grid_window'}")
-
-    if normalize_subtype_embedding:
-        row_sums = subtype_counts.sum(axis=1, keepdims=True)
-        subtype_counts = np.divide(
-            subtype_counts,
-            row_sums,
-            out=np.zeros_like(subtype_counts),
-            where=row_sums > 0
-        )
-
-    if normalize_gene_counts:
-        denom = granule_counts[:, None]
-        spot_gene_counts = np.divide(
-            spot_gene_counts,
-            denom,
-            out=np.zeros_like(spot_gene_counts),
-            where=denom > 0
-        )
-
-    soma_counts = None
-    if include_soma_features:
-        if adata is None:
-            raise ValueError("`adata` must be provided when include_soma_features=True.")
-
-        cx = adata.obs[cell_loc_key[0]].to_numpy(dtype=float)
-        cy = adata.obs[cell_loc_key[1]].to_numpy(dtype=float)
-        cell_coords = np.column_stack([cx, cy])
-
-        soma_counts = np.zeros(n_spots, dtype=float)
-
-        if neighbor_mode == "radius":
-            cell_tree = cKDTree(cell_coords)
-            cell_neighbor_lists = cell_tree.query_ball_point(spot_coords, r=radius)
-            for i, nbrs in enumerate(cell_neighbor_lists):
-                if len(nbrs) == 0:
-                    continue
-                nbrs = np.asarray(nbrs, dtype=int)
-                d = np.linalg.norm(cell_coords[nbrs] - spot_coords[i], axis=1)
-                w = _kernel_weight(d)
-                soma_counts[i] = w.sum()
-
-        else:  # grid_window
-            cell_tree = cKDTree(cell_coords)
-            max_halfdiag = np.sqrt((spot_width / 2.0) ** 2 + (spot_height / 2.0) ** 2)
-            candidate_lists = cell_tree.query_ball_point(spot_coords, r=max_halfdiag + 1e-8)
-
-            x_min = sx - spot_width / 2.0
-            x_max = sx + spot_width / 2.0
-            y_min = sy - spot_height / 2.0
-            y_max = sy + spot_height / 2.0
-
-            for i, cand in enumerate(candidate_lists):
-                if len(cand) == 0:
-                    continue
-                cand = np.asarray(cand, dtype=int)
-                inside = (
-                    (cell_coords[cand, 0] >= x_min[i]) &
-                    (cell_coords[cand, 0] <  x_max[i]) &
-                    (cell_coords[cand, 1] >= y_min[i]) &
-                    (cell_coords[cand, 1] <  y_max[i])
-                )
-                nbrs = cand[inside]
-                if len(nbrs) == 0:
-                    continue
-                d = np.linalg.norm(cell_coords[nbrs] - spot_coords[i], axis=1)
-                w = _kernel_weight(d)
-                soma_counts[i] = w.sum()
-
-    subtype_feature_names = [f"count_{s}" for s in subtype_names]
-    aux_features = {"granule_count": granule_counts}
-    if include_soma_features:
-        aux_features["soma_count"] = soma_counts
-
-    return subtype_counts, subtype_feature_names, aux_features, spot_gene_counts
+    # UPDATED return
+    return embeddings, encoder.categories_[0], granule_counts

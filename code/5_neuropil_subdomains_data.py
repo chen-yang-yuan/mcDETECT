@@ -223,5 +223,9 @@ spots = fill_spot_expression(spots, transcripts, grid_len=25.0, assign_to="X")
 transcripts_extrasomatic = transcripts[transcripts["overlaps_nucleus"] == 0]
 spots = fill_spot_expression(spots, transcripts_extrasomatic, grid_len=25.0, assign_to="extrasomatic_transcripts")
 
+# Intrasomatic transcripts
+transcripts_intrasomatic = transcripts[transcripts["overlaps_nucleus"] == 1]
+spots = fill_spot_expression(spots, transcripts_intrasomatic, grid_len=25.0, assign_to="intrasomatic_transcripts")
+
 # Save results
 spots.write_h5ad(comparison_path + "neuropil_subdomains_spots.h5ad")
