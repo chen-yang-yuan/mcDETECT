@@ -1,4 +1,4 @@
-# mcDETECT v2.1.5 <img src="docs/logo.jpg" width="150" align="right" />
+# mcDETECT v2.1.6 <img src="docs/logo.jpg" width="150" align="right" />
 
 ## Uncovering the dark transcriptome in polarized neuronal compartments with mcDETECT
 
@@ -105,6 +105,6 @@ Source code: [mcDETECT_package](mcDETECT_package).<br>
 
 We are continuing adding new features. Bug reports or feature requests are welcome.<br>
 
-Last update: 03/02/2026, version 2.1.5.
+Last update: 04/15/2026, version 2.1.6.
 
 ## Citation
