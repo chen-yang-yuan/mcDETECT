@@ -67,6 +67,7 @@ python setup.py install --user
 ### Core Python dependencies
 
 mcDETECT relies on a standard scientific Python stack for spatial transcriptomics and image-based analysis, including:
+
 * anndata
 * miniball
 * numpy
@@ -89,6 +90,7 @@ Environment 1
 * Python packages: anndata = 0.9.1, miniball = 1.2.0, numpy = 1.24.3, pandas = 2.0.2, rtree = 1.2.0, scipy = 1.10.1, shapely = 2.0.1, sklearn = 1.2.2
 
 Environment 2
+
 * System: macOS Sequoia 15.3.1 (Apple M1 Pro)
 * Python: 3.9.12
 * Python packages: anndata = 0.8.0, miniball = 1.2.0, numpy = 1.23.5, pandas = 2.2.3, rtree = 0.9.7, scipy = 1.13.1, shapely = 2.0.1, sklearn = 1.5.2
