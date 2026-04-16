@@ -101,7 +101,7 @@ Toy datasets used in this tutorial can be downloaded from [Dropbox](https://www.
 
 ## Contributing
 
-All source code: [mcDETECT_package](mcDETECT_package); mcDETECT model: [model.py](mcDETECT_package/mcDETECT/model.py).<br>
+Source code: [mcDETECT_package](mcDETECT_package) (mcDETECT model: [model.py](mcDETECT_package/mcDETECT/model.py)).<br>
 
 We are continuing adding new features. Bug reports or feature requests are welcome.<br>
 
