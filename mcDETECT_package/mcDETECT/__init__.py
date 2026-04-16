@@ -1,4 +1,4 @@
-__version__ = "2.1.5"
+__version__ = "2.1.6"
 
 from . import utils
 from . import model
