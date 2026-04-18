@@ -97,7 +97,7 @@ Environment 2
 
 ## Tutorial
 
-For a step-by-step tutorial on mcDETECT, please see [tutorial](tutorial/tutorial.md).<br>
+For a step-by-step tutorial on mcDETECT, see the documentation published from the **[mcDETECT-tutorial](https://github.com/chen-yang-yuan/mcDETECT-tutorial)** repository ([Read the Docs](https://readthedocs.org/) project linked from that repo).<br>
 
 Toy datasets used in this tutorial can be downloaded from [Dropbox](https://www.dropbox.com/scl/fo/gxt64ilg55p44iwj1dox3/AO-LRvZUQnJU9twvtaEdpcY?rlkey=bjk5dv5sqnhinblapr12wtzau&st=owdm92gz&dl=0).
 

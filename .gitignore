@@ -43,3 +43,6 @@ __pycache__/
 # Logs
 *.log
 logs/
+
+# Tutorial sources are maintained in mcDETECT-tutorial (docs/tutorial_pages); not tracked here
+tutorial/
