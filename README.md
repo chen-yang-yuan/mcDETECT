@@ -97,7 +97,7 @@ Environment 2
 
 ## Tutorial
 
-For detailed documentation and a step-by-step demo using mcDETECT, see the [tutorial page](https://mcdetect-tutorial.readthedocs.io/en/latest/).
+For detailed documentation and a step-by-step demo of MERSCOPE data analysis using mcDETECT, see the [tutorial page](https://mcdetect-tutorial.readthedocs.io/en/latest/).
 
 ## Contributing
 
