@@ -2,7 +2,7 @@
 SSAM detection on ONE (sample x param x geneset x tile) unit of the manifest.
 
 Dispatched as a SLURM array task: the array index selects the manifest row.
-Loads the sample's transcripts, restricts to the gene set and the tile, localizes
+Loads that tile's transcript shard, restricts to the gene set, localizes
 coordinates (SSAM builds a KDE grid from 0..max, so tiles must be origin-shifted),
 runs SSAM's KDE + local-maxima detection (locked default/tuned thresholds), turns
 each local maximum into a fixed-radius sphere, re-globalizes, and writes the tile's

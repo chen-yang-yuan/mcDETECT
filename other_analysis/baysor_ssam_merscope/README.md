@@ -46,11 +46,11 @@ afterward, so only `sample × param × geneset × tile` runs actually execute
 
 ```
 config.py            shared config: paths, sweep axes, locked params, tiling, layout
-common.py            load transcripts, restrict genes, cut tile, localize/globalize
-build_manifest.py    enumerate occupied tiles × params × genesets -> manifest.csv
+common.py            load a tile shard, restrict genes, localize/globalize coords
+build_manifest.py    tile each sample -> write per-tile shards + manifest.csv
 run_baysor_tile.py   Baysor on one manifest tile -> miniball spheres (tile parquet)
 run_ssam_tile.py     SSAM on one manifest tile   -> fixed-radius spheres (tile parquet)
-concat_spheres.py    stitch tiles -> one spheres.parquet per (method,sample,param,geneset)
+concat_spheres.py    stitch tiles -> one spheres.parquet per config (+ completeness check)
 slurm/               SLURM wrappers (see below)
 ```
 
@@ -81,7 +81,7 @@ cd ~/hulab/projects/mcDETECT/other_analysis/baysor_ssam_merscope
 # 1) Build the manifest (fast; login node is fine).
 bash slurm/build_manifest.sh            # -> manifests/manifest.csv, n_jobs.txt
 
-# 2) Submit both detection arrays + concat (afterok) in one shot.
+# 2) Submit both detection arrays + concat (afterany) in one shot.
 bash slurm/submit_arrays.sh 50          # 50 = max concurrent array tasks
 
 #    ...or submit manually:
@@ -91,8 +91,10 @@ bash slurm/submit_arrays.sh 50          # 50 = max concurrent array tasks
 # sbatch slurm/concat.sh                # after both arrays finish
 ```
 
-Per-tile outputs and `--overwrite` make reruns cheap: existing tile parquets are
-skipped, so a partially failed array can simply be resubmitted.
+Per-tile outputs mean reruns are cheap: finished tiles are skipped, so a partially
+failed array can simply be resubmitted (add `--overwrite` to force recompute).
+`concat` cross-checks tiles against the manifest and lists any config with missing
+tiles in `spheres_summary.csv`, so partial failures are never silently dropped.
 
 ## Next (not in these scripts)
 

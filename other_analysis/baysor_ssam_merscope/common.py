@@ -1,34 +1,12 @@
 """
-Shared data helpers for the Baysor/SSAM MERSCOPE benchmark: loading transcripts,
-restricting to a gene set, cutting out a tile, and localizing / re-globalizing
+Shared data helpers for the Baysor/SSAM MERSCOPE benchmark: loading a tile's
+transcript shard, restricting to a gene set, and localizing / re-globalizing
 coordinates so per-tile detections can be stitched back together.
 """
 
-import numpy as np
 import pandas as pd
 
 import config as C
-
-
-def load_transcripts(sample: str, geneset: str) -> pd.DataFrame:
-    """
-    Read a sample's transcript table (native MERSCOPE schema), keep only the
-    coordinate + gene columns, and restrict to the requested gene set.
-    Columns returned: global_x, global_y, global_z, target.
-    """
-    df = pd.read_parquet(C.transcripts_path(sample), columns=C.READ_COLS)
-    genes = C.resolve_geneset(geneset)
-    if genes is not None:
-        df = df[df[C.GENE_COL].isin(genes)]
-    return df.reset_index(drop=True)
-
-
-def subset_tile(df: pd.DataFrame, x0: float, x1: float, y0: float, y1: float) -> pd.DataFrame:
-    """Half-open tile [x0, x1) x [y0, y1) so each transcript lands in exactly one tile."""
-    x = df[C.X_COL].to_numpy()
-    y = df[C.Y_COL].to_numpy()
-    mask = (x >= x0) & (x < x1) & (y >= y0) & (y < y1)
-    return df.loc[mask].reset_index(drop=True)
 
 
 def load_tile_transcripts(sample: str, tile_row: int, tile_col: int, geneset: str) -> pd.DataFrame:

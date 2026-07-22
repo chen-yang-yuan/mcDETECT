@@ -64,10 +64,6 @@ def transcripts_path(sample: str) -> Path:
     return DATA_ROOT / sample_dataset(sample) / "processed_data" / "transcripts.parquet"
 
 
-def genes_csv_path(sample: str) -> Path:
-    return DATA_ROOT / sample_dataset(sample) / "processed_data" / "genes.csv"
-
-
 # ----------------------------------------------------------------------------- #
 # Transcript-table schema (MERSCOPE native; matches mcDETECT & the sim converters)
 # ----------------------------------------------------------------------------- #

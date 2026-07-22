@@ -1,6 +1,8 @@
 #!/bin/bash
 # Convenience launcher: size both detection arrays from the manifest and submit
-# baysor + ssam in parallel, then concat with an afterok dependency on both.
+# baysor + ssam in parallel, then concat after both arrays finish (afterany, so a
+# stray failed tile does not block concat -- concat's completeness check reports
+# any missing tiles instead).
 #
 # Prereq: build_manifest.sh has already produced manifests/n_jobs.txt.
 #
@@ -32,6 +34,7 @@ SSAM_ID=$(sbatch --parsable --array=0-${LAST}%${CONCURRENCY} slurm/run_ssam.sh)
 echo "Submitted SSAM array:   $SSAM_ID"
 
 CONCAT_ID=$(sbatch --parsable \
-    --dependency=afterok:${BAYSOR_ID}:${SSAM_ID} \
+    --dependency=afterany:${BAYSOR_ID}:${SSAM_ID} \
     slurm/concat.sh)
-echo "Submitted concat (afterok both): $CONCAT_ID"
+echo "Submitted concat (afterany both): $CONCAT_ID"
+echo "Check output/MERSCOPE_WT_AD_comparison/baysor_ssam/spheres_summary.csv for any missing tiles."

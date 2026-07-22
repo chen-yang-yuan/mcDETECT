@@ -2,7 +2,7 @@
 Baysor detection on ONE (sample x param x geneset x tile) unit of the manifest.
 
 Dispatched as a SLURM array task: the array index selects the manifest row.
-Loads the sample's transcripts, restricts to the gene set and the tile, localizes
+Loads that tile's transcript shard, restricts to the gene set, localizes
 coordinates, runs Baysor (locked default/tuned params), converts each Baysor cell
 to a minimum-enclosing sphere (miniball), re-globalizes, and writes the tile's
 sphere table. NO size/in-soma/NC filtering here -- that is a post-hoc step.
