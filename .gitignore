@@ -11,8 +11,14 @@ output/
 # External validation
 validation/
 
-# Other analysis
-other_analysis/
+# Other analysis (ignore heavy data/results, but keep the Baysor/SSAM real-data
+# benchmark scripts tracked so they can be transferred to HGCC)
+other_analysis/*
+!other_analysis/baysor_ssam_merscope/
+# ...but never track generated outputs/manifests/logs written under the scripts dir
+other_analysis/baysor_ssam_merscope/output/
+other_analysis/baysor_ssam_merscope/logs/
+other_analysis/baysor_ssam_merscope/**/*.log
 
 # Simulation related
 simulation/simulated_data/
