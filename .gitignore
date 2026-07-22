@@ -20,6 +20,9 @@ other_analysis/baysor_ssam_merscope/output/
 other_analysis/baysor_ssam_merscope/logs/
 other_analysis/baysor_ssam_merscope/**/*.log
 
+# Plans / manuscript / reviewer materials (unpublished — never commit)
+plans/
+
 # Simulation related
 simulation/simulated_data/
 simulation/output/
