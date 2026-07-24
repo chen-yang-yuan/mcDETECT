@@ -11,14 +11,12 @@ output/
 # External validation
 validation/
 
-# Other analysis (ignore heavy data/results, but keep the Baysor/SSAM real-data
-# benchmark scripts tracked so they can be transferred to HGCC)
-other_analysis/*
-!other_analysis/baysor_ssam_merscope/
-# ...but never track generated outputs/manifests/logs written under the scripts dir
-other_analysis/baysor_ssam_merscope/output/
-other_analysis/baysor_ssam_merscope/logs/
-other_analysis/baysor_ssam_merscope/**/*.log
+# Other analysis
+other_analysis/
+
+# R2 revision code (R2_revision/) is TRACKED by default so it transfers to HGCC.
+# Its generated outputs/logs are already covered by the global output/, logs/ and
+# *.log rules elsewhere in this file, so no entry is needed here.
 
 # Plans / manuscript / reviewer materials (unpublished — never commit)
 plans/
