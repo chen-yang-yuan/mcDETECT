@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-cd ~/hulab/projects/mcDETECT/other_analysis/baysor_ssam_merscope
+cd ~/hulab/projects/mcDETECT/R2_revision/baysor_ssam_merscope
 mkdir -p logs
 
 CONCURRENCY="${1:-50}"
@@ -37,4 +37,4 @@ CONCAT_ID=$(sbatch --parsable \
     --dependency=afterany:${BAYSOR_ID}:${SSAM_ID} \
     slurm/concat.sh)
 echo "Submitted concat (afterany both): $CONCAT_ID"
-echo "Check output/MERSCOPE_WT_AD_comparison/baysor_ssam/spheres_summary.csv for any missing tiles."
+echo "Check output/spheres_summary.csv for any missing tiles."

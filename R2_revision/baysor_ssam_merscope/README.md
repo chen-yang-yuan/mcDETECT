@@ -54,8 +54,8 @@ concat_spheres.py    stitch tiles -> one spheres.parquet per config (+ completen
 slurm/               SLURM wrappers (see below)
 ```
 
-Outputs (git-ignored) go to
-`output/MERSCOPE_WT_AD_comparison/baysor_ssam/` under the repo root:
+Outputs (git-ignored) go to this analysis dir's own `output/` subfolder
+(`R2_revision/baysor_ssam_merscope/output/`):
 
 ```
 manifests/manifest.csv, n_jobs.txt
@@ -76,7 +76,7 @@ Assumes the repo is at `~/hulab/projects/mcDETECT` (edit the `cd` lines in
 present, and conda envs `mcDETECT-env`, `baysor_env` (Baysor on PATH), `ssam_hpc`.
 
 ```bash
-cd ~/hulab/projects/mcDETECT/other_analysis/baysor_ssam_merscope
+cd ~/hulab/projects/mcDETECT/R2_revision/baysor_ssam_merscope
 
 # 1) Build the manifest (fast; login node is fine).
 bash slurm/build_manifest.sh            # -> manifests/manifest.csv, n_jobs.txt
@@ -85,7 +85,7 @@ bash slurm/build_manifest.sh            # -> manifests/manifest.csv, n_jobs.txt
 bash slurm/submit_arrays.sh 50          # 50 = max concurrent array tasks
 
 #    ...or submit manually:
-# N=$(cat output/MERSCOPE_WT_AD_comparison/baysor_ssam/manifests/n_jobs.txt)
+# N=$(cat output/manifests/n_jobs.txt)
 # sbatch --array=0-$((N-1))%50 slurm/run_baysor.sh
 # sbatch --array=0-$((N-1))%50 slurm/run_ssam.sh
 # sbatch slurm/concat.sh                # after both arrays finish

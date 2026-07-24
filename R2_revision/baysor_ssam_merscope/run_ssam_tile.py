@@ -19,7 +19,6 @@ import argparse
 import os
 import tempfile
 import time
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -108,8 +107,8 @@ def main():
     print(f"    transcripts in tile: {tile.shape[0]}", flush=True)
 
     if tile.shape[0] == 0:
-        pd.DataFrame(columns=["sphere_x", "sphere_y", "sphere_z", "sphere_r"]).to_parquet(
-            out_path, index=False)
+        common.write_parquet_atomic(
+            pd.DataFrame(columns=["sphere_x", "sphere_y", "sphere_z", "sphere_r"]), out_path)
         print(f"    empty tile -> wrote 0 spheres to {out_path}")
         return
 
@@ -122,7 +121,7 @@ def main():
         norm_threshold=p["norm_threshold"],
     )
     spheres = common.globalize_spheres(spheres, offset)
-    spheres.to_parquet(out_path, index=False)
+    common.write_parquet_atomic(spheres, out_path)
     print(f"    wrote {spheres.shape[0]} spheres to {out_path} "
           f"in {time.time() - t0:.1f}s", flush=True)
 

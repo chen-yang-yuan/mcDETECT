@@ -129,9 +129,12 @@ def main():
     print(f"    transcripts in tile: {tile.shape[0]}", flush=True)
 
     if tile.shape[0] == 0:
-        pd.DataFrame(
-            columns=["sphere_x", "sphere_y", "sphere_z", "sphere_r", "cell_id", "n_molecules"]
-        ).to_parquet(out_path, index=False)
+        common.write_parquet_atomic(
+            pd.DataFrame(
+                columns=["sphere_x", "sphere_y", "sphere_z", "sphere_r", "cell_id", "n_molecules"]
+            ),
+            out_path,
+        )
         print(f"    empty tile -> wrote 0 spheres to {out_path}")
         return
 
@@ -155,7 +158,7 @@ def main():
         spheres = segmentation_to_spheres(seg_csv)
 
     spheres = common.globalize_spheres(spheres, offset)
-    spheres.to_parquet(out_path, index=False)
+    common.write_parquet_atomic(spheres, out_path)
     print(f"    wrote {spheres.shape[0]} spheres to {out_path} "
           f"in {time.time() - t0:.1f}s", flush=True)
 

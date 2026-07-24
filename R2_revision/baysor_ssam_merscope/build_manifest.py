@@ -30,6 +30,12 @@ def enumerate_tiles(sample: str):
     Returns a list of occupied-tile dicts.
     """
     df = pd.read_parquet(C.transcripts_path(sample), columns=C.READ_COLS)
+    # Safeguard: drop any blank/false-code probes if present (processed_data is expected
+    # to already exclude them, so 0 is the normal count). Leaves the real panel genes.
+    n_before = len(df)
+    df = df[~df[C.GENE_COL].astype(str).str.startswith(C.BLANK_PREFIX)].reset_index(drop=True)
+    print(f"[{sample}] dropped {n_before - len(df)} {C.BLANK_PREFIX}* rows (0 expected); "
+          f"{df[C.GENE_COL].nunique()} genes kept")
     x = df[C.X_COL].to_numpy(dtype=float)
     y = df[C.Y_COL].to_numpy(dtype=float)
 

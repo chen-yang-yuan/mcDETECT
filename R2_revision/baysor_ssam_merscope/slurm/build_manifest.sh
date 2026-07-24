@@ -9,7 +9,7 @@
 #SBATCH --output=logs/manifest_%j.out
 #SBATCH --error=logs/manifest_%j.err
 #SBATCH --time=02:00:00
-#SBATCH --mem=32G
+#SBATCH --mem=64G
 #SBATCH --cpus-per-task=2
 #SBATCH --partition=nodes
 #SBATCH --mail-type=END,FAIL
@@ -18,7 +18,7 @@
 set -euo pipefail
 
 # Scripts directory on HGCC (adjust if your checkout lives elsewhere).
-cd ~/hulab/projects/mcDETECT/other_analysis/baysor_ssam_merscope
+cd ~/hulab/projects/mcDETECT/R2_revision/baysor_ssam_merscope
 mkdir -p logs
 
 module purge

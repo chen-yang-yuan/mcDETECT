@@ -16,7 +16,7 @@
 
 set -euo pipefail
 
-cd ~/hulab/projects/mcDETECT/other_analysis/baysor_ssam_merscope
+cd ~/hulab/projects/mcDETECT/R2_revision/baysor_ssam_merscope
 mkdir -p logs
 
 module purge

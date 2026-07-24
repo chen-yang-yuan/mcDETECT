@@ -4,9 +4,24 @@ transcript shard, restricting to a gene set, and localizing / re-globalizing
 coordinates so per-tile detections can be stitched back together.
 """
 
+import os
+from pathlib import Path
+
 import pandas as pd
 
 import config as C
+
+
+def write_parquet_atomic(df: pd.DataFrame, path) -> None:
+    """
+    Write a parquet by writing to a temp file then atomically renaming into place.
+    Guards against a truncated/half-written tile if a task is OOM/timeout-killed
+    mid-write -- otherwise resume ("skip if exists") would keep a corrupt file.
+    """
+    path = Path(path)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    df.to_parquet(tmp, index=False)
+    os.replace(tmp, path)  # atomic on the same filesystem
 
 
 def load_tile_transcripts(sample: str, tile_row: int, tile_col: int, geneset: str) -> pd.DataFrame:

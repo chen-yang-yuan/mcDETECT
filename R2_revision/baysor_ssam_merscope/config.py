@@ -19,9 +19,9 @@ dispatched as a SLURM array task (see slurm/). Within a detection the tissue is
 cut into TILE_SIZE x TILE_SIZE um squares; tiles are detected independently and
 concatenated afterwards (edge cases across tile borders are ignored, per design).
 
-Nothing here is run locally; scripts are transferred to HGCC. Paths resolve from
-the repository root (two levels up from this file) and can be overridden with the
-MCDETECT_DATA_ROOT / MCDETECT_OUT_ROOT environment variables.
+Nothing here is run locally; scripts are transferred to HGCC. Data resolves from the
+repository root; all outputs go to this analysis dir's own output/ subfolder. Both can
+be overridden with the MCDETECT_DATA_ROOT / MCDETECT_OUT_ROOT environment variables.
 """
 
 import os
@@ -30,18 +30,14 @@ from pathlib import Path
 # ----------------------------------------------------------------------------- #
 # Paths
 # ----------------------------------------------------------------------------- #
-# other_analysis/baysor_ssam_merscope/config.py  ->  parents[2] == repo root
-REPO_ROOT = Path(__file__).resolve().parents[2]
+# .../R2_revision/baysor_ssam_merscope/config.py
+SCRIPT_DIR = Path(__file__).resolve().parent      # .../R2_revision/baysor_ssam_merscope
+REPO_ROOT = SCRIPT_DIR.parents[1]                 # .../mcDETECT (repo root)
 
 DATA_ROOT = Path(os.environ.get("MCDETECT_DATA_ROOT", REPO_ROOT / "data"))
-# Outputs land in the repo-level (git-ignored) output area, beside the existing
-# WT/AD comparison figures.
-OUT_ROOT = Path(
-    os.environ.get(
-        "MCDETECT_OUT_ROOT",
-        REPO_ROOT / "output" / "MERSCOPE_WT_AD_comparison" / "baysor_ssam",
-    )
-)
+# All outputs live inside this analysis dir, under output/ (git-ignored via the global
+# output/ rule), keeping every R2-revision analysis's results next to its own code.
+OUT_ROOT = Path(os.environ.get("MCDETECT_OUT_ROOT", SCRIPT_DIR / "output"))
 
 MANIFEST_DIR = OUT_ROOT / "manifests"
 MANIFEST_PATH = MANIFEST_DIR / "manifest.csv"
@@ -70,8 +66,16 @@ def transcripts_path(sample: str) -> Path:
 X_COL, Y_COL, Z_COL, GENE_COL = "global_x", "global_y", "global_z", "target"
 READ_COLS = [X_COL, Y_COL, Z_COL, GENE_COL]
 
-# MERSCOPE has a discrete z-grid; we run the methods in 3D for parity with mcDETECT.
+# MERSCOPE has a discrete z-grid (7 planes at 1.5 um spacing: 0,1.5,...,9.0 um -- the
+# values are microns, same units as x/y); we run the methods in 3D for parity with mcDETECT.
 IS_3D = True
+
+# Safeguard: drop any MERSCOPE false-code / blank probes (`Blank-*`) before detection.
+# processed_data/transcripts.parquet is expected to already exclude them; this guard is
+# cheap insurance so a stray blank never enters Baysor/SSAM (blanks are not real transcripts
+# and not part of the ~290-gene panel the methods segment on). Applied once at shard time
+# (build_manifest.py); "all" geneset = the real panel genes, "markers" = SYN_GENES.
+BLANK_PREFIX = "Blank"
 
 # ----------------------------------------------------------------------------- #
 # Sweep axes
@@ -82,7 +86,7 @@ GENESETS = ["all", "markers"]
 
 # The 20 synaptic granule markers mcDETECT seeds on (code/3_detection.py::syn_genes).
 # geneset == "markers" restricts the transcript input to exactly these; "all" keeps
-# the full panel (the methods' intended usage).
+# the full 290-gene panel (the methods' intended usage; blank probes already dropped).
 SYN_GENES = [
     "Camk2a", "Cplx2", "Slc17a7", "Ddn", "Syp", "Map1a", "Shank1", "Syn1",
     "Gria1", "Gria2", "Cyfip2", "Vamp2", "Bsn", "Slc32a1", "Nfasc", "Syt1",

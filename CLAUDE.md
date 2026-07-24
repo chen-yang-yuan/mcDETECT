@@ -8,7 +8,7 @@ When editing or updating any code in this repository, do NOT test, execute, or r
 
 ## Deep reference
 
-`plans/ANALYSIS.md` is the full methodology + per-script reference (algorithm, every numbered step, benchmarks, simulation, validation, cross-platform analysis). Read it when you need detail beyond this summary; keep it in sync when the algorithm or pipeline changes materially. This CLAUDE.md stays intentionally short — only what's needed to orient any run.
+`plans/analysis_details.md` is the full methodology + per-script reference (algorithm, every numbered step, benchmarks, simulation, validation, cross-platform analysis). Read it when you need detail beyond this summary; keep it in sync when the algorithm or pipeline changes materially. (`plans/` is gitignored — local only, not in a fresh clone.) This CLAUDE.md stays intentionally short — only what's needed to orient any run.
 
 ## What this repository is
 
@@ -16,7 +16,7 @@ mcDETECT is a computational framework for uncovering the "dark transcriptome" in
 
 This is a **research repository** backing a paper, not just a library. It contains both:
 - **`mcDETECT_package/`** — the pip-installable `mcDETECT` package (the reusable algorithm).
-- **`code/`, `simulation/`, `validation/`, `other_analysis/`, `benchmark/`** — analysis scripts and notebooks that reproduce paper figures and consume the package.
+- **`code/`, `simulation/`, `validation/`, `other_analysis/`, `benchmark/`, `R2_revision/`** — analysis scripts and notebooks that reproduce paper figures and consume the package. (`R2_revision/` holds round-2 revision code — e.g. the Baysor/SSAM real-data benchmark in `R2_revision/baysor_ssam_merscope/`; it is tracked and transfers to HGCC.)
 
 ## Environment & commands
 
@@ -70,7 +70,7 @@ Dataset naming: `MERSCOPE_WT_1` / `MERSCOPE_AD_1` (wild-type vs Alzheimer's dise
 
 ## Important: gitignored working directories
 
-The following are **gitignored** and hold large data/results that will NOT be in a fresh clone — do not assume they exist and do not try to commit them: `data/`, `output/`, `validation/`, `other_analysis/`, `code/old/`, `simulation/simulated_data/`, `simulation/output/`, and all `figures.*` / `figures_response.*` files. Scripts reference these via relative paths (`../data/...`, `../output/...`) and must be run from `code/`.
+The following are **gitignored** and hold large data/results (or unpublished materials) that will NOT be in a fresh clone — do not assume they exist and do not try to commit them: `data/`, `output/`, `validation/`, `other_analysis/`, `plans/`, `code/old/`, `simulation/simulated_data/`, `simulation/output/`, and all `figures.*` / `figures_response.*` files. Scripts reference these via relative paths (`../data/...`, `../output/...`) and must be run from `code/`. In contrast, **`R2_revision/` is tracked** (round-2 revision code, so it transfers to HGCC); only its generated `output/`/`logs/` are gitignored via the global rules.
 
 ## Conventions
 
