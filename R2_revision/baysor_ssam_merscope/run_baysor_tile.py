@@ -138,8 +138,20 @@ def main():
         print(f"    empty tile -> wrote 0 spheres to {out_path}")
         return
 
-    local, offset = common.localize(tile)
     p = C.BAYSOR_PARAMS[param]
+    min_mols = int(p["min_molecules_per_cell"])
+    empty_cols = ["sphere_x", "sphere_y", "sphere_z", "sphere_r", "cell_id", "n_molecules"]
+
+    # Baysor's uniform initialization needs enough molecules to seed >= 2 cells; a very
+    # sparse (edge) tile makes it fail with "ERROR: n must be > 1". Treat as 0 detections
+    # (edge tiles carry negligible transcripts and are ignored by design).
+    if tile.shape[0] < 2 * min_mols:
+        common.write_parquet_atomic(pd.DataFrame(columns=empty_cols), out_path)
+        print(f"    too few molecules ({tile.shape[0]} < {2 * min_mols}) for Baysor init "
+              f"-> wrote 0 spheres to {out_path}")
+        return
+
+    local, offset = common.localize(tile)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         in_csv = os.path.join(tmpdir, "molecules.csv")
@@ -147,15 +159,24 @@ def main():
         mol.insert(0, "transcript_id", np.arange(len(mol), dtype=int))
         mol.to_csv(in_csv, index=False)
 
-        seg_csv = run_baysor_cli(
-            in_csv=in_csv,
-            out_dir=os.path.join(tmpdir, "baysor_out"),
-            is_3d=C.IS_3D,
-            min_molecules_per_cell=p["min_molecules_per_cell"],
-            scale=p["scale"],
-            n_threads=C.BAYSOR_THREADS,
-        )
-        spheres = segmentation_to_spheres(seg_csv)
+        try:
+            seg_csv = run_baysor_cli(
+                in_csv=in_csv,
+                out_dir=os.path.join(tmpdir, "baysor_out"),
+                is_3d=C.IS_3D,
+                min_molecules_per_cell=min_mols,
+                scale=p["scale"],
+                n_threads=C.BAYSOR_THREADS,
+            )
+            spheres = segmentation_to_spheres(seg_csv)
+        except RuntimeError as e:
+            # Backstop: a borderline-sparse tile Baysor still can't initialize -> 0 spheres.
+            # Any other Baysor failure is genuine and re-raised.
+            if "n must be > 1" in str(e):
+                print(f"    Baysor could not initialize ({tile.shape[0]} molecules) -> 0 spheres")
+                spheres = pd.DataFrame(columns=empty_cols)
+            else:
+                raise
 
     spheres = common.globalize_spheres(spheres, offset)
     common.write_parquet_atomic(spheres, out_path)
