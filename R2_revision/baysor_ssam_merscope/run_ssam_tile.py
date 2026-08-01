@@ -114,12 +114,34 @@ def main():
 
     local, offset = common.localize(tile)
     p = C.SSAM_PARAMS[param]
+    empty_cols = ["sphere_x", "sphere_y", "sphere_z", "sphere_r"]
 
-    spheres = run_ssam_tile(
-        local, is_3d=C.IS_3D,
-        expression_threshold=p["expression_threshold"],
-        norm_threshold=p["norm_threshold"],
-    )
+    # SSAM builds a KDE grid of size ceil(extent / sampling_distance) per axis; a very
+    # sparse (edge) tile whose molecules span less than one grid cell in x or y makes
+    # run_kde fail with "Invalid image dimension". Such tiles carry negligible signal
+    # and are ignored by design -> treat as 0 detections.
+    x_extent = float(local["x"].max())  # localize() shifts the min to 0, so max == extent
+    y_extent = float(local["y"].max())
+    if x_extent < C.SSAM_SAMPLING_DISTANCE or y_extent < C.SSAM_SAMPLING_DISTANCE:
+        common.write_parquet_atomic(pd.DataFrame(columns=empty_cols), out_path)
+        print(f"    tile extent {x_extent:.2f}x{y_extent:.2f} < sampling "
+              f"{C.SSAM_SAMPLING_DISTANCE} -> wrote 0 spheres to {out_path}")
+        return
+
+    try:
+        spheres = run_ssam_tile(
+            local, is_3d=C.IS_3D,
+            expression_threshold=p["expression_threshold"],
+            norm_threshold=p["norm_threshold"],
+        )
+    except ValueError as e:
+        # Backstop: a borderline tile whose KDE grid still degenerates -> 0 spheres.
+        # Any other ValueError is genuine and re-raised.
+        if "Invalid image dimension" in str(e):
+            print(f"    SSAM KDE grid degenerate ({tile.shape[0]} molecules) -> 0 spheres")
+            spheres = pd.DataFrame(columns=empty_cols)
+        else:
+            raise
     spheres = common.globalize_spheres(spheres, offset)
     common.write_parquet_atomic(spheres, out_path)
     print(f"    wrote {spheres.shape[0]} spheres to {out_path} "

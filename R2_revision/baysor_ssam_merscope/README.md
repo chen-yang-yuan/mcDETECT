@@ -75,6 +75,16 @@ Assumes the repo is at `~/hulab/projects/mcDETECT` (edit the `cd` lines in
 `slurm/*.sh` if not) with `data/MERSCOPE_{WT,AD}_1/processed_data/transcripts.parquet`
 present, and conda envs `mcDETECT-env`, `baysor_env` (Baysor on PATH), `ssam_hpc`.
 
+**Required Baysor patch:** Baysor 0.7.1's cosmetic NCV color-embedding
+(`gene_composition_colors(bm_data.x, …)` in `cli_wrappers.jl::run_segmentation`)
+crashes on this data (`UmapFit: size(X,2) must be greater than n_neighbors`)
+*before* `segmentation.csv` is written, killing the tile. Wrap that call in a
+`try/catch` that fills `ncv_color` with a placeholder on failure — cosmetic only,
+segmentation and locked params unchanged (the wrapper runs from source, so the
+edit applies on the next run). See the plan's HPC section for the exact edit.
+Sparse edge tiles are handled as 0 detections by `run_{baysor,ssam}_tile.py`, so
+smoke-test a *dense* tile (high `n_tx` in `manifest.csv`), not just `--array=0`.
+
 ```bash
 cd ~/hulab/projects/mcDETECT/R2_revision/baysor_ssam_merscope
 
