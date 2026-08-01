@@ -50,6 +50,12 @@ def run_baysor_cli(in_csv: str, out_dir: str, is_3d: bool,
     if is_3d:
         cmd += ["-z", "z"]
     cmd += ["-m", str(min_molecules_per_cell), "-s", str(scale), "-o", str(out_dir_path)]
+    # We only consume per-molecule cell assignments from segmentation.csv, so disable
+    # polygon export: it is unused, and its save path has a type-dispatch bug
+    # (save_segmentation_results MethodError) on sparse tiles whose boundary polygons
+    # come back with a degenerate type. Disabling it skips boundary_polygons_auto and
+    # does NOT change cell assignments, so it is consistent across all tiles.
+    cmd += ["--polygon-format", "none"]
 
     print("    Baysor command:", " ".join(cmd), flush=True)
     result = subprocess.run(cmd, env=env, capture_output=True, text=True)
