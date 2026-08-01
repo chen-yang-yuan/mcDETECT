@@ -170,10 +170,22 @@ def main():
             )
             spheres = segmentation_to_spheres(seg_csv)
         except RuntimeError as e:
-            # Backstop: a borderline-sparse tile Baysor still can't initialize -> 0 spheres.
-            # Any other Baysor failure is genuine and re-raised.
-            if "n must be > 1" in str(e):
-                print(f"    Baysor could not initialize ({tile.shape[0]} molecules) -> 0 spheres")
+            # Backstop: on a sparse/degenerate tile Baysor runs but forms no valid cells,
+            # failing in one of several internal steps depending on how sparse the tile is
+            # (uniform init, NCV/UMAP KNN, or empty count-matrix assembly). These all mean
+            # "no cells" -> 0 detections; edge tiles carry negligible transcripts and are
+            # ignored by design. Any UNRECOGNIZED failure (OOM, a real bug on a dense tile)
+            # is genuine and re-raised so it is never silently zeroed.
+            msg = str(e)
+            sparse_failures = (
+                "n must be > 1",                     # uniform init: too few to seed >=2 cells
+                "must be greater than n_neighbors",  # NCV/UMAP KNN on too few points (also patched in Baysor)
+                "convert_segmentation_to_counts",    # empty count matrix: no cells formed
+                "sphstack",                          # empty sparse stack: no matched cells
+            )
+            if any(s in msg for s in sparse_failures):
+                print(f"    Baysor formed no valid segmentation ({tile.shape[0]} molecules) "
+                      f"-> wrote 0 spheres to {out_path}")
                 spheres = pd.DataFrame(columns=empty_cols)
             else:
                 raise
