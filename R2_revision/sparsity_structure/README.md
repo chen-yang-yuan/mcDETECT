@@ -65,8 +65,8 @@ a2_config.py                 paths, gene sets, every constant; the only place to
 a2_common.py                 ported computation (subtyping, density, permutation, scoring, exports)
 
 A2a_multigene.ipynb          A2a end to end            [local, mcDETECT-env]
-run_permutation_detect.py    A2b stage 1, one permuted detection      [HGCC, SLURM array]
-score_embedding.py           A2b stage 2, score one arm; --concat     [HGCC, SLURM array]
+run_permutation_detect.py    A2b stage 1, one permuted detection (10 tasks)  [HGCC, SLURM array]
+score_embedding.py           A2b stage 2, one COMBINED arm (6 tasks); --concat  [HGCC, array]
 slurm/run_permutation.sh     detection array wrapper
 slurm/score_embedding.sh     scoring array wrapper
 slurm/concat.sh              stitches the per-arm tables
@@ -83,7 +83,8 @@ output/
 │   │   └── neuropil_subdomains_Isocortex_50/    subdomain maps, heatmaps, DE tables
 │   └── readstrata/          tercile edges, composition, per-tercile density
 ├── a2b/
-│   ├── perm_<sample>_seed<N>/   all_granules.parquet, granules.parquet, granule_adata_tsne.h5ad
+│   ├── perm_<sample>_seed<N>/   all_granules.parquet, granules.parquet, granule_profile.h5ad
+│   ├── combined_{real,seed<N>}/ the combined WT+AD object that is actually embedded
 │   └── metrics/             per-arm + concatenated CSV/Parquet, t-SNE jpegs
 └── figures/                 everything A2_figures.R draws
 ```
@@ -153,36 +154,104 @@ notebook.
 
 ## A2b — label-permutation null
 
-**The null.** `A2.permute_targets` shuffles the `target` column across all transcripts of a
-sample. Every molecule position, the total transcript density, and each gene's total count
+**The null.** `A2.permute_targets_inplace` shuffles the `target` column across all transcripts of
+a sample. Every molecule position, the total transcript density, and each gene's total count
 survive; only the association between a gene label and where its molecules sit is destroyed.
-`assert_permutation_valid` checks all three every run — not behind a flag, because the whole
-argument rests on them and they are free next to detection. Note the label moves while the
-coordinates and `overlaps_nucleus` stay with their row, so each transcript keeps its own
-in-nucleus status.
+`permutation_fingerprint` / `assert_permutation_valid` check all three every run — not behind a
+flag, because the whole argument rests on them and they are free next to detection. The checks
+use a fixed 100 K-row positional probe rather than a whole-column hash, because they must be
+**order-sensitive**: any summary that sums or xors per-element hashes is invariant under exactly
+the permutation being tested. Permuting in place against that probe also avoids holding two
+103 M-row tables at once.
 
-**Why HGCC.** 103.4 M (WT) + 68.9 M (AD) transcripts; `code/3_detection.sh` asks 200 G / 16 cpu.
-`N_PERM = 5` per sample → **10 detection tasks**, then **12 scoring arms** (2 real + 10 permuted).
-The permuted table is generated from the seed inside the job and never written to disk: five
-copies of a 1.75 GB table buy nothing a seed does not already record.
+### An arm is a combined WT+AD object
 
-**What is compared.** The real arm is *re-scored by the same script on the same code path* rather
-than quoting the existing `benchmark_clustering_results.csv` — that file used the sklearn default
-`n_init` and no silhouette subsampling, so its numbers are not comparable to these. Two
-deliberate departures from `code/benchmark/benchmark_clustering.py:92-121`, applied identically
-to every arm: `n_init = 20` (the published subtyping value), and silhouette on a fixed
-`SILHOUETTE_SAMPLE_SIZE` subsample, since it is O(n²) in distances.
+This is the point that governs the whole stage. The embedding every published granule result
+rests on — Fig. 3f subtypes, Fig. 4d t-SNE — is the **combined** object built by
+`code/4_post_detection.ipynb` cell 19: `anndata.concat({WT, AD}, label="batch")` →
+`layers["counts"]` → `normalize_total(1e4)` → `log1p` → `PCA(10)` → `t-SNE(n_pcs=10)`. A
+per-sample embedding is not what the reviewer is talking about.
 
-**Detection-level reporting is deliberately modest.** An exact filter-survival chain is *not*
-recoverable and is not claimed: mcDETECT applies the size and in-soma filters inside `dbscan()`,
-i.e. before `merge_sphere()`, so the fine set is not a subset of the rough set. What
-`score_embedding.py` reports instead is the rough and fine counts, plus each threshold evaluated
-as a **post-hoc predicate on the rough set** — comparable across arms and honestly labelled as
-such in the figure caption.
+So permutation replicate *s* pairs **(WT seed s, AD seed s)** into one object:
 
-**It stops at the embedding.** No subtyping, no density, no microdomains for A2b.
+```
+10 detections  ->  5 null embeddings  +  1 real  =  6 scoring arms
+```
 
----
+`score_embedding.py` reproduces cell 19 exactly for the permuted arms, including its coordinate
+alignment. (Note the WT y-flip is applied there for the *second* time — `3_detection.py` already
+flipped `global_y_new` with the same cutoff, so the two cancel. That is what the published code
+does and what produced the published object, so it is reproduced rather than "fixed". None of it
+affects the embedding, which reads only expression.)
+
+The real arm reads the published `granule_adata_tsne.h5ad` directly. That is legitimate and
+worth stating: the metrics read `adata[:, REF_GENES].X`, which is `normalize_total` + `log1p`
+and does not depend on the PCA or t-SNE stored in that file, and that file came from the same
+`mc.profile` → concat → normalise code path.
+
+### Size matching, and why it is the headline
+
+The permuted arms will **not** hold the same number of granules as the real arm. The shuffle
+preserves the marker transcript count exactly (33.3 M in WT, 20.3 M in AD — markers are 32.2 % /
+29.5 % of the panel) but moves those markers onto the panel-wide distribution, raising the
+in-nucleus fraction from 0.218 → 0.279 (WT) and 0.242 → 0.304 (AD). Per sphere that is decisive:
+real granules average `in_soma_ratio` 0.0005 against a `< 0.1` cut, while a permuted
+~6-transcript sphere averages ~0.28. The count can still move in **either** direction, since a
+soma-dominated point cloud yields more DBSCAN clusters that are individually larger and then
+fail `sphere_r < 4`.
+
+Both silhouette and ARI stability depend on n. An unmatched comparison would therefore invite
+exactly the objection A2b exists to close — *"of course the null looks less structured, you gave
+it a tenth of the data."* So every permuted arm also emits a **size-matched pair**,
+`matched_perm_seed<s>` and `matched_real_seed<s>`, both cut to `min(n_real, n_perm)` and
+stratified by `batch` so the WT:AD ratio matches as well as the total. Matching is symmetric —
+whichever arm is larger gets subsampled. **The matched pair is the headline comparison**; the
+full-n series ride along with `n_obs` on every row, and `A2_figures.R` plots them as two facets.
+
+The count difference itself is reported as a result (`a2b_granule_counts.jpeg`), not hidden.
+
+### Comparability of the metrics
+
+Real and permuted are scored by one script on one code path. Two deliberate departures from
+`code/benchmark/benchmark_clustering.py:92-121`, applied identically to every arm: `n_init = 20`
+(the published subtyping value, where that script left the sklearn default), and silhouette on a
+fixed `SILHOUETTE_SAMPLE_SIZE` subsample, since it is O(n²) in distances. Consequence to
+disclose: these numbers are comparable **with each other** but **not** with the published
+`benchmark_clustering_results.csv`.
+
+### t-SNE — full population, published implementation
+
+`sc.settings.n_jobs` defaults to **1**, and `sc.tl.tsne` forwards `n_jobs` straight into
+`sklearn.manifold.TSNE`, which uses it for both the nearest-neighbour search and the Barnes-Hut
+gradient. So the published run — and the first version of this code — was single-threaded purely
+by default. Passing `n_jobs` gives the **same implementation, same `method="barnes_hut"`, same
+`random_state`, same parameters**; only the thread count changes. That is what makes
+full-population t-SNE affordable, and why `openTSNE`/`MulticoreTSNE` are not installed (scanpy
+itself notes MulticoreTSNE "is not actually faster anymore").
+
+Every arm gets a full-population t-SNE, the real arm included, so all are produced by the same
+call; the published `X_tsne` is never overwritten. The size-matched **pair** is additionally
+rendered for `C.TSNE_MATCHED_SEEDS` (seed 0 by default) — one honest side-by-side at identical
+n, since a t-SNE of 1.08 M points beside one of 50 K differs visually from point density alone.
+
+### Detection-level reporting is deliberately modest
+
+An exact filter-survival chain is *not* recoverable and is not claimed: mcDETECT applies the size
+and in-soma filters inside `dbscan()`, i.e. before `merge_sphere()`, so the fine set is not a
+subset of the rough set. `score_embedding.py` reports the rough and fine counts plus each
+threshold evaluated as a **post-hoc predicate on the rough set** — comparable across arms and
+labelled as such in the figure caption.
+
+### If the null collapses
+
+That is a **result**, not a crash. Any series with `n_obs < C.MIN_EMBED_N` (500) is skipped with
+an explanatory row in `<arm>_status.csv`; the k-sweep drops `k >= n_obs`; t-SNE needs
+`n_obs > 3 * perplexity`. Nothing is ever silently dropped — `--concat` names every missing arm,
+and `A2_figures.R` §5 prints the skipped series before plotting.
+
+### It stops at the embedding
+
+No subtyping, no density, no microdomains for A2b.
 
 ## Run order
 
@@ -200,9 +269,11 @@ cd ~/hulab/projects/mcDETECT/R2_revision/sparsity_structure
 mkdir -p logs                                  # SLURM opens log files before the job body runs
 
 sbatch --array=0 slurm/run_permutation.sh      # smoke-test one task before the full array
-bash slurm/submit.sh 10                        # detection -> scoring (afterok) -> concat (afterany)
+bash slurm/submit.sh 10                        # 10 detections -> 6 scoring arms (afterok)
+                                               #   -> concat (afterany)
 
-cat output/a2b/metrics/a2b_detection_summary.csv   # expect 12 rows
+cat output/a2b/metrics/a2b_detection_summary.csv   # expect 12 rows (6 arms x 2 samples)
+cat output/a2b/metrics/a2b_status.csv              # any series that was too small to embed
 
 #   transfer back only output/a2b/metrics/ -- small CSVs and jpegs, not the h5ad files
 
@@ -214,9 +285,29 @@ Rscript A2_figures.R
 (`sbatch --array=<id1>,<id2> slurm/run_permutation.sh`). `concat` runs on `afterany` and names
 any arm that is missing rather than dropping it silently.
 
-**Heaviest step.** The scoring sweep, not detection: k = 2..30 × 5 stability seeds × `n_init=20`
-on a ~10⁵–10⁶ × 34 matrix. If it times out, narrow `C.SCORE_K_RANGE` — but narrow it for every
-arm, never for one.
+**Where the time goes.**
+
+| Stage | Tasks | Within a task |
+|---|---|---|
+| Detection | 10 concurrent | **No parallelism available.** `DBSCAN(...)` at `model.py:127,211` passes no `n_jobs`, `dbscan()` loops the 20 markers serially, and `merge_sphere()`/`_remove_overlaps` is a Python row loop. The log prints the sphere count entering the merge, so a blow-up shows up in the first minutes rather than after a 240 h timeout. |
+| Combine + score | 6 concurrent | PCA on BLAS threads; the k-sweep is joblib-parallel over 29 k values → ~2 rounds on 16 cores instead of 29 serial blocks |
+| t-SNE | in the same 6 tasks | `n_jobs` → sklearn's neighbour search **and** Barnes-Hut gradient |
+
+Two caveats, both consequences of the count difference. t-SNE is Barnes-Hut, so cost scales
+roughly `n log n`: the arms will **not** take equal time and the stage finishes when the
+**largest** one does, not "in one t-SNE". Detection time is likewise not guaranteed to match the
+real run.
+
+**Levers if a stage runs long.** Detection: set `C.RUN_ROUGH_PASS = False` — it merges the
+unfiltered sphere set and is the larger half of the stage; the cost is the in-soma survival
+statistic. Scoring: narrow `C.SCORE_K_RANGE`, but narrow it for every arm, never for one.
+t-SNE: `C.RUN_TSNE = False` leaves the metrics untouched.
+
+**Why detection is not parallelised further.** `dbscan(target_names=[gene])` per gene looks like
+an easy win but is wrong — `model.py:202` defines `others` as the other markers *within the
+passed subset*, so single-gene calls would silently yield wrong `size`, `comp` and
+`in_soma_ratio`. Reimplementing the loop is worse: A2b's entire claim is that the null went
+through the **identical** pipeline, so it must call the published code, not a faster lookalike.
 
 ---
 
@@ -234,9 +325,11 @@ re-derivable from `output/` alone.
 | AD pre-synaptic reduction persists | `a2a/multigene/subtype_density_per_region_multigene.csv`, `figures/granule_density_multigene_pre-syn.jpeg`, `figures/granule_density_all_vs_multigene.jpeg` |
 | Microdomain contrast persists | `a2a/multigene/neuropil_subdomains_Isocortex_50/`, `figures/gsea_terms_published_vs_multigene.csv` |
 | "not a low-count artifact" | `a2a/readstrata/readstrata_density.csv`, `figures/readstrata_density_*.jpeg` |
-| "randomized data does not give the same embedding" | `a2b/metrics/a2b_metrics.csv`, `figures/a2b_silhouette_score.jpeg`, `figures/a2b_ari_stability_mean.jpeg`, `figures/a2b_structure_at_k15.csv` |
+| "randomized data does not give the same embedding" | `a2b/metrics/a2b_metrics.csv`, `figures/a2b_silhouette_score.jpeg`, `figures/a2b_ari_stability_mean.jpeg`, `figures/a2b_structure_at_k15.csv` — quote the **size-matched** facet |
+| Permutation yields a different granule count | `figures/a2b_granule_counts.jpeg`, `a2b/metrics/a2b_detection_summary.csv` |
+| Any null arm too small to embed | `a2b/metrics/a2b_status.csv` |
 | Permuted detections are somatic | `figures/a2b_in_soma_survival.jpeg`, `a2b/metrics/a2b_detection_summary.csv` |
-| Real vs permuted t-SNE | `a2b/metrics/tsne_*.jpeg` |
+| Real vs permuted t-SNE | `a2b/metrics/tsne_matched_{real,perm}_seed0.jpeg` (equal n — use this pair), `tsne_real.jpeg` / `tsne_perm_seed*.jpeg` (full n) |
 
 Images are JPEG at dpi 500; convert to PNG before embedding in Word (the Adobe APP14 marker
 trips Word up).
@@ -249,7 +342,8 @@ trips Word up).
 microdomain contrast survive restriction to granules that cannot be explained by their seeding
 marker alone, and that the WT/AD effect is not confined to the lowest read tercile. A2b shows the
 embedding structure is not reproduced by data with identical positions, identical density and
-identical per-gene totals.
+identical per-gene totals — and, because of the size-matched arms, not merely because the null
+has fewer granules to work with.
 
 **Does not.** Neither is a test of whether granules are biologically real — that burden sits with
 A3 (ambient / pseudo-granule controls) and the EM validation. A2b's null is a *global* shuffle:

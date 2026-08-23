@@ -523,32 +523,60 @@ if (RUN_READSTRATA) {
 # ==============================================================================================
 # 5. A2b -- permutation null vs real embedding
 # ==============================================================================================
+#
+# An arm here is one COMBINED WT+AD object -- 1 real + 5 permuted -- because that is the
+# embedding the paper reports. Each permuted arm carries three metric series: itself at full n,
+# and a size-matched pair (`matched_perm_seed<s>` / `matched_real_seed<s>`) cut to
+# min(n_real, n_perm). The **size-matched panel is the headline**: silhouette and ARI stability
+# both depend on n, so the full-n panel alone would invite the reading that the null looks less
+# structured merely because it holds less data.
 
 if (RUN_A2B) {
   message("[5] permutation null")
 
   f_metrics <- file.path(a2b_dir, "a2b_metrics.csv")
+  f_status  <- file.path(a2b_dir, "a2b_status.csv")
   f_detect  <- file.path(a2b_dir, "a2b_detection_summary.csv")
   f_dist    <- file.path(a2b_dir, "a2b_distributions.parquet")
+
+  # Any arm whose null collapsed below MIN_EMBED_N is recorded, not dropped -- surface it.
+  if (need(f_status, "5")) {
+    st <- read.csv(f_status, check.names = FALSE)
+    skipped <- st %>% filter(status != "embedded")
+    if (nrow(skipped)) {
+      message("  NOTE ", nrow(skipped), " series were not embedded (too few granules):")
+      for (i in seq_len(nrow(skipped)))
+        message("    ", skipped$series[i], " (n = ", skipped$n_obs[i], "): ", skipped$reason[i])
+    }
+    write.csv(st, file.path(fig_dir, "a2b_series_status.csv"), row.names = FALSE)
+  }
 
   if (need(f_metrics, "5")) {
     met <- read.csv(f_metrics, check.names = FALSE) %>%
       mutate(condition = factor(condition, levels = c("real", "permuted")),
-             sample = factor(sample, levels = c("WT", "AD")))
+             panel = factor(ifelse(matched, "Size-matched (headline)", "Full n"),
+                            levels = c("Size-matched (headline)", "Full n")))
 
-    # Permuted arms are summarised as mean with a min-max ribbon over seeds; the real arm is a
-    # single curve. Plotting each permuted seed separately would say the same thing less legibly.
+    # Mean with a min-max ribbon over arms; plotting each of the 5 permuted seeds separately
+    # would say the same thing less legibly.
     band <- met %>%
-      group_by(sample, condition, n_clusters) %>%
+      group_by(panel, condition, n_clusters) %>%
       summarise(across(c(silhouette_score, ari_stability_mean, inertia),
                        list(mean = ~mean(.x, na.rm = TRUE),
                             lo = ~min(.x, na.rm = TRUE),
                             hi = ~max(.x, na.rm = TRUE))),
-                n_arms = dplyr::n(), .groups = "drop")
+                n_arms = dplyr::n(), n_obs = mean(n_obs), .groups = "drop")
+
+    n_note <- band %>%
+      group_by(panel, condition) %>%
+      summarise(n_obs = round(mean(n_obs)), .groups = "drop") %>%
+      mutate(txt = paste0(condition, " n=", format(n_obs, big.mark = ","))) %>%
+      group_by(panel) %>%
+      summarise(txt = paste(txt, collapse = "; "), .groups = "drop")
 
     for (m in c("silhouette_score", "ari_stability_mean")) {
       d <- band %>%
-        transmute(sample, condition, n_clusters,
+        transmute(panel, condition, n_clusters,
                   mean = .data[[paste0(m, "_mean")]],
                   lo = .data[[paste0(m, "_lo")]],
                   hi = .data[[paste0(m, "_hi")]])
@@ -559,14 +587,18 @@ if (RUN_A2B) {
         geom_line(linewidth = 0.8) +
         geom_point(size = 1.6) +
         geom_vline(xintercept = 15, linetype = "dashed", colour = "grey50") +
-        facet_wrap(~ sample) +
+        geom_text(data = n_note, aes(x = Inf, y = Inf, label = txt), inherit.aes = FALSE,
+                  hjust = 1.05, vjust = 1.6, size = 3.2, colour = "grey30") +
+        facet_wrap(~ panel) +
         scale_colour_manual(values = cond_colors) +
         scale_fill_manual(values = cond_colors) +
         labs(x = "Number of granule clusters (k)", y = y_lab, colour = NULL, fill = NULL,
-             caption = paste("Ribbon spans the permuted seeds. Dashed line marks the published",
-                             "k = 15. Both arms use n_init = 20 and the same silhouette",
-                             "subsample, so they are comparable with each other but not with",
-                             "the published benchmark_clustering_results.csv.")) +
+             caption = paste("Combined WT+AD embedding. Ribbon spans arms; dashed line marks the",
+                             "published k = 15. Left panel equalises n between real and permuted;",
+                             "right panel shows each arm at its own size. Both arms use",
+                             "n_init = 20 and the same silhouette subsample, so they are",
+                             "comparable with each other but not with the published",
+                             "benchmark_clustering_results.csv.")) +
         theme_classic() +
         theme(strip.background = element_blank(), legend.position = "bottom",
               axis.text = element_text(size = 12), axis.title = element_text(size = 13),
@@ -578,7 +610,8 @@ if (RUN_A2B) {
     # The headline number: structure at the published k.
     at_k <- met %>%
       filter(n_clusters == 15) %>%
-      dplyr::select(arm, sample, condition, seed, silhouette_score, ari_stability_mean, n_obs)
+      dplyr::select(arm, series, condition, matched, seed, silhouette_score,
+                    ari_stability_mean, n_obs)
     write.csv(at_k, file.path(fig_dir, "a2b_structure_at_k15.csv"), row.names = FALSE)
     message("  wrote a2b_structure_at_k15.csv")
   }
@@ -587,40 +620,61 @@ if (RUN_A2B) {
     det <- read.csv(f_detect, check.names = FALSE) %>%
       mutate(condition = factor(condition, levels = c("real", "permuted")),
              sample = factor(sample, levels = c("WT", "AD")))
-    d <- det %>%
-      dplyr::select(sample, condition, arm, n_rough, n_fine, frac_pass_in_soma) %>%
-      pivot_longer(c(n_rough, n_fine), names_to = "stage", values_to = "n") %>%
-      mutate(stage = factor(stage, levels = c("n_rough", "n_fine"),
-                            labels = c("Rough (no filters)", "Fine (size + soma + NC)")))
-    p <- ggplot(d, aes(x = stage, y = n, fill = condition)) +
+
+    # The count difference is a result in its own right, not a nuisance -- show it directly.
+    p <- ggplot(det, aes(x = sample, y = n_fine, fill = condition)) +
       geom_boxplot(outlier.size = 0.8, colour = "#3b3b3b", alpha = 0.8) +
-      facet_wrap(~ sample) +
       scale_fill_manual(values = cond_colors) +
       scale_y_continuous(labels = scales::comma) +
-      labs(x = NULL, y = "Detections", fill = NULL,
-           caption = paste("One box per arm set. The permuted arms' marker transcripts inherit",
-                           "the panel-wide, soma-dominated distribution, so the in-soma filter",
-                           "is where they are expected to fall away.")) +
-      theme_classic() +
-      theme(strip.background = element_blank(), legend.position = "bottom",
-            axis.text = element_text(size = 12),
-            plot.caption = element_text(size = 9, colour = "grey30", hjust = 0))
-    ggsave(file.path(fig_dir, "a2b_detection_counts.jpeg"), p, width = 9, height = 5, dpi = dpi)
-    message("  wrote a2b_detection_counts.jpeg")
-
-    p <- ggplot(det, aes(x = sample, y = frac_pass_in_soma, fill = condition)) +
-      geom_boxplot(outlier.size = 0.8, colour = "#3b3b3b", alpha = 0.8) +
-      scale_fill_manual(values = cond_colors) +
-      scale_y_continuous(labels = scales::percent) +
-      labs(x = NULL, y = "Rough detections with in-soma ratio < 0.1", fill = NULL,
-           caption = paste("Evaluated post hoc on the unfiltered (rough) set, identically for",
-                           "every arm; mcDETECT itself applies this filter before sphere",
-                           "merging, so this is not the pipeline's own survival chain.")) +
+      labs(x = NULL, y = "Granules detected (fine pass)", fill = NULL,
+           caption = paste("One box per arm set. The shuffle preserves the marker transcript",
+                           "count exactly, so any difference here comes from where those",
+                           "markers land, not how many there are.")) +
       theme_classic() +
       theme(legend.position = "bottom", axis.text = element_text(size = 12),
             plot.caption = element_text(size = 9, colour = "grey30", hjust = 0))
-    ggsave(file.path(fig_dir, "a2b_in_soma_survival.jpeg"), p, width = 7, height = 5, dpi = dpi)
-    message("  wrote a2b_in_soma_survival.jpeg")
+    ggsave(file.path(fig_dir, "a2b_granule_counts.jpeg"), p, width = 7, height = 5, dpi = dpi)
+    message("  wrote a2b_granule_counts.jpeg")
+
+    if (all(c("n_rough", "n_fine") %in% names(det)) && any(!is.na(det$n_rough))) {
+      d <- det %>%
+        dplyr::select(sample, condition, arm, n_rough, n_fine) %>%
+        pivot_longer(c(n_rough, n_fine), names_to = "stage", values_to = "n") %>%
+        mutate(stage = factor(stage, levels = c("n_rough", "n_fine"),
+                              labels = c("Rough (no filters)", "Fine (size + soma + NC)")))
+      p <- ggplot(d, aes(x = stage, y = n, fill = condition)) +
+        geom_boxplot(outlier.size = 0.8, colour = "#3b3b3b", alpha = 0.8) +
+        facet_wrap(~ sample) +
+        scale_fill_manual(values = cond_colors) +
+        scale_y_continuous(labels = scales::comma) +
+        labs(x = NULL, y = "Detections", fill = NULL,
+             caption = paste("Permuted markers inherit the panel-wide, soma-dominated",
+                             "distribution, so the in-soma filter is where they are expected",
+                             "to fall away.")) +
+        theme_classic() +
+        theme(strip.background = element_blank(), legend.position = "bottom",
+              axis.text = element_text(size = 12),
+              plot.caption = element_text(size = 9, colour = "grey30", hjust = 0))
+      ggsave(file.path(fig_dir, "a2b_detection_counts.jpeg"), p, width = 9, height = 5, dpi = dpi)
+      message("  wrote a2b_detection_counts.jpeg")
+
+      p <- ggplot(det %>% filter(!is.na(frac_pass_in_soma)),
+                  aes(x = sample, y = frac_pass_in_soma, fill = condition)) +
+        geom_boxplot(outlier.size = 0.8, colour = "#3b3b3b", alpha = 0.8) +
+        scale_fill_manual(values = cond_colors) +
+        scale_y_continuous(labels = scales::percent) +
+        labs(x = NULL, y = "Rough detections with in-soma ratio < 0.1", fill = NULL,
+             caption = paste("Evaluated post hoc on the unfiltered (rough) set, identically for",
+                             "every arm; mcDETECT itself applies this filter before sphere",
+                             "merging, so this is not the pipeline's own survival chain.")) +
+        theme_classic() +
+        theme(legend.position = "bottom", axis.text = element_text(size = 12),
+              plot.caption = element_text(size = 9, colour = "grey30", hjust = 0))
+      ggsave(file.path(fig_dir, "a2b_in_soma_survival.jpeg"), p, width = 7, height = 5, dpi = dpi)
+      message("  wrote a2b_in_soma_survival.jpeg")
+    } else {
+      message("  [note] no rough-pass tables (C.RUN_ROUGH_PASS was off); skipping survival panels")
+    }
   }
 
   if (need(f_dist, "5")) {

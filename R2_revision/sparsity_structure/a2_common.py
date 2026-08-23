@@ -10,10 +10,12 @@ imported; nothing is re-derived or "improved" silently. Where a port is vectoris
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from scipy.spatial import cKDTree
 from scipy.stats import ttest_ind
 from sklearn.cluster import MiniBatchKMeans
 from sklearn.metrics import adjusted_rand_score, silhouette_score
+from threadpoolctl import threadpool_limits
 
 
 # ==================================================================================================
@@ -368,55 +370,107 @@ def add_density_significance(density_df, per_spot_wt, per_spot_ad, n_bootstrap=5
 # A2b -- permutation and embedding-structure scoring
 # ==================================================================================================
 
-def permute_targets(transcripts, seed, target_col="target"):
+def permutation_fingerprint(transcripts, target_col="target",
+                            coord_cols=("global_x", "global_y", "global_z"),
+                            n_probe=100_000, seed=0):
     """
-    Reviewer #2's null: permute gene labels across all transcripts of a sample.
+    Everything needed to validate a permutation, without keeping a second copy of the table.
 
-    Preserves every molecule position, the total transcript density, and each gene's total count
-    -- it destroys only the association between a gene label and where its molecules sit. Note
-    the label is moved while `overlaps_nucleus` and the coordinates stay attached to their row,
-    so a transcript keeps its own in-nucleus status.
+    The transcript tables are 69-103 M rows, so holding `original` alongside `permuted` just to
+    compare them afterwards roughly doubles peak memory for no reason. Capture this first,
+    permute in place, then check against it.
 
-    Returns a copy; the caller is responsible for the (cheap) integrity assertions in
-    `assert_permutation_valid`.
+    Per-gene totals are captured exactly (a value_counts is small). Positional integrity is
+    captured on a fixed random probe of `n_probe` row positions instead: the checks must be
+    ORDER-SENSITIVE, which rules out any whole-column summary that sums or xors per-element
+    hashes -- those are invariant under exactly the permutation being tested. A 100 K-row probe
+    costs nothing and catches any real coding error with overwhelming probability.
     """
     rng = np.random.default_rng(seed)
-    out = transcripts.copy()
-    labels = out[target_col].to_numpy()
-    out[target_col] = labels[rng.permutation(labels.shape[0])]
-    return out
+    n = len(transcripts)
+    probe = np.sort(rng.choice(n, size=min(n_probe, n), replace=False))
+    return {
+        "n": n,
+        "counts": transcripts[target_col].value_counts().sort_index(),
+        "probe": probe,
+        "labels": transcripts[target_col].to_numpy()[probe],
+        "cols": {c: transcripts[c].to_numpy()[probe]
+                 for c in list(coord_cols) + ["overlaps_nucleus"]},
+    }
 
 
-def assert_permutation_valid(original, permuted, target_col="target",
-                             coord_cols=("global_x", "global_y", "global_z")):
-    """The whole null rests on these three facts, so they are checked every run, not behind a
-    flag. Cheap relative to detection."""
-    o = original[target_col].value_counts().sort_index()
+def permute_targets_inplace(transcripts, seed, target_col="target"):
+    """
+    Reviewer #2's null: permute gene labels across all transcripts of a sample, **in place**.
+
+    Preserves every molecule position, the total transcript density, and each gene's total count
+    -- it destroys only the association between a gene label and where its molecules sit. The
+    label moves while the coordinates and `overlaps_nucleus` stay attached to their row, so each
+    transcript keeps its own in-nucleus status.
+
+    Mutates and returns `transcripts`. Pair with `permutation_fingerprint` (before) and
+    `assert_permutation_valid` (after).
+    """
+    rng = np.random.default_rng(seed)
+    labels = transcripts[target_col].to_numpy()
+    transcripts[target_col] = labels[rng.permutation(labels.shape[0])]
+    return transcripts
+
+
+def assert_permutation_valid(fingerprint, permuted, target_col="target",
+                             max_unchanged_frac=0.5):
+    """The whole null rests on these facts, so they are checked every run, not behind a flag.
+    Cheap relative to detection."""
+    assert len(permuted) == fingerprint["n"], "permutation changed the number of transcripts"
+
     p = permuted[target_col].value_counts().sort_index()
-    assert o.equals(p), "permutation changed per-gene totals"
-    for c in list(coord_cols) + ["overlaps_nucleus"]:
-        assert np.array_equal(original[c].to_numpy(), permuted[c].to_numpy()), (
+    assert fingerprint["counts"].equals(p), "permutation changed per-gene totals"
+
+    probe = fingerprint["probe"]
+    for c, expected in fingerprint["cols"].items():
+        assert np.array_equal(permuted[c].to_numpy()[probe], expected), (
             f"permutation moved column {c!r}; only the gene label may move")
-    assert not np.array_equal(original[target_col].to_numpy(), permuted[target_col].to_numpy()), (
-        "permutation was a no-op")
+
+    unchanged = float((permuted[target_col].to_numpy()[probe] == fingerprint["labels"]).mean())
+    assert unchanged < max_unchanged_frac, (
+        f"permutation looks like a no-op: {unchanged:.1%} of probed labels are unchanged")
+    return unchanged
 
 
-def score_embedding_structure(X, k_range, n_init=20, batch_size=5000,
-                              stability_seeds=(0, 42, 123, 456, 789),
-                              silhouette_sample_size=50_000, silhouette_seed=0):
+def size_matched_indices(batches_a, batches_b, seed=0):
     """
-    Inertia, silhouette and seed-to-seed ARI stability over a range of k.
+    Row indices subsampling two arms to the same size, stratified by batch.
 
-    Ported from code/benchmark/benchmark_clustering.py:92-121, with `n_init` exposed (that script
-    left it at the sklearn default while the published subtyping uses 20) and silhouette
-    evaluated on a fixed subsample (it is O(n^2) in distances and the arms have ~10^5-10^6 rows).
-    Both departures are applied identically to every arm, so real and permuted stay comparable
-    with each other -- but NOT with the numbers in the published
-    benchmark_clustering_results.csv.
+    The permuted arms will not hold the same number of granules as the real arm, and both
+    silhouette and ARI stability depend on n -- so an unmatched comparison invites the reading
+    that the null looks less structured merely because it has less data. Matching is symmetric
+    (whichever arm is larger gets cut) because the count can move in either direction, and it is
+    done per batch so the WT:AD ratio matches as well as the total.
+
+    Returns (idx_a, idx_b), sorted, with len(idx_a) == len(idx_b).
     """
-    stability_seeds = list(stability_seeds)
-    results = []
-    for k in k_range:
+    rng = np.random.default_rng(seed)
+    batches_a = np.asarray(batches_a).astype(str)
+    batches_b = np.asarray(batches_b).astype(str)
+    out_a, out_b = [], []
+    for b in sorted(set(batches_a) | set(batches_b)):
+        ia = np.flatnonzero(batches_a == b)
+        ib = np.flatnonzero(batches_b == b)
+        n = min(ia.size, ib.size)
+        if n == 0:
+            continue
+        out_a.append(ia if ia.size == n else rng.choice(ia, n, replace=False))
+        out_b.append(ib if ib.size == n else rng.choice(ib, n, replace=False))
+    if not out_a:
+        return np.array([], dtype=int), np.array([], dtype=int)
+    return np.sort(np.concatenate(out_a)), np.sort(np.concatenate(out_b))
+
+
+def _score_one_k(X, k, n_init, batch_size, stability_seeds, silhouette_sample_size,
+                 silhouette_seed):
+    """One k of the sweep. Runs in a joblib worker, so BLAS is pinned to one thread -- 16 workers
+    each spawning 16 BLAS threads oversubscribe the node and finish slower than serial."""
+    with threadpool_limits(limits=1):
         km = MiniBatchKMeans(n_clusters=k, random_state=stability_seeds[0],
                              batch_size=batch_size, n_init=n_init)
         labels = km.fit_predict(X)
@@ -437,10 +491,43 @@ def score_embedding_structure(X, k_range, n_init=20, batch_size=5000,
         ari = [adjusted_rand_score(label_list[i], label_list[j])
                for i in range(len(label_list)) for j in range(i + 1, len(label_list))]
 
-        results.append({"n_clusters": k, "inertia": km.inertia_, "silhouette_score": sil,
-                        "ari_stability_mean": float(np.mean(ari)) if ari else np.nan,
-                        "n_obs": n, "silhouette_sample_size": sample_size})
-    return pd.DataFrame(results)
+    return {"n_clusters": k, "inertia": float(km.inertia_), "silhouette_score": sil,
+            "ari_stability_mean": float(np.mean(ari)) if ari else np.nan,
+            "n_obs": n, "silhouette_sample_size": sample_size}
+
+
+def score_embedding_structure(X, k_range, n_init=20, batch_size=5000,
+                              stability_seeds=(0, 42, 123, 456, 789),
+                              silhouette_sample_size=50_000, silhouette_seed=0, n_jobs=1):
+    """
+    Inertia, silhouette and seed-to-seed ARI stability over a range of k.
+
+    Ported from code/benchmark/benchmark_clustering.py:92-121, with `n_init` exposed (that script
+    left it at the sklearn default while the published subtyping uses 20) and silhouette
+    evaluated on a fixed subsample (it is O(n^2) in distances and the arms have ~10^5-10^6 rows).
+    Both departures are applied identically to every arm, so real and permuted stay comparable
+    with each other -- but NOT with the numbers in the published
+    benchmark_clustering_results.csv.
+
+    `n_jobs` parallelises across k. Each k is independent and every random_state is fixed, so
+    this changes wall time and nothing else -- asserted by the n_jobs=1 vs n_jobs=4 equality
+    check in the verification suite. joblib memmaps X (~300 MB) rather than pickling one copy
+    per worker; set JOBLIB_TEMP_FOLDER to node-local scratch.
+
+    Values of k >= n_obs are skipped rather than raising, so a collapsed null still returns a
+    usable table.
+    """
+    stability_seeds = list(stability_seeds)
+    ks = [k for k in k_range if k < X.shape[0]]
+    if not ks:
+        return pd.DataFrame(columns=["n_clusters", "inertia", "silhouette_score",
+                                     "ari_stability_mean", "n_obs", "silhouette_sample_size"])
+
+    rows = Parallel(n_jobs=n_jobs)(
+        delayed(_score_one_k)(X, k, n_init, batch_size, stability_seeds,
+                              silhouette_sample_size, silhouette_seed) for k in ks)
+    # Sort by k so the table is deterministic regardless of completion order.
+    return pd.DataFrame(rows).sort_values("n_clusters").reset_index(drop=True)
 
 
 # ==================================================================================================

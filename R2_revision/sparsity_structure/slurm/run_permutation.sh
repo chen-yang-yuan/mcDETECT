@@ -11,6 +11,12 @@
 
 # A2b stage 1 -- one permuted detection per array task (2 samples x N_PERM seeds).
 # Resources match code/3_detection.sh: this runs the same chain on the same section size.
+# It now stops at the profile -- the per-sample normalise/PCA/t-SNE was removed, since the
+# embedding that matters is the combined WT+AD one built in score_embedding.py. That removed the
+# slowest step (sc.tl.tsne falls back to single-threaded sklearn here), so expect a shorter run
+# than 3_detection.py. Detection itself is serial within a task: sklearn's DBSCAN takes no
+# n_jobs, dbscan() loops the 20 markers, and merge_sphere() is a Python row loop -- the log
+# prints the sphere count entering the merge so a blow-up is visible early.
 # Finished tasks are skipped, so a failed id can be resubmitted on its own:
 #   sbatch --array=<id> slurm/run_permutation.sh
 
