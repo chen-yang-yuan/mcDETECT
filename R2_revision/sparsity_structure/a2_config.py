@@ -33,6 +33,7 @@ A2A_MULTIGENE_DIR = A2A_DIR / "multigene"
 A2A_READSTRATA_DIR = A2A_DIR / "readstrata"
 A2B_DIR = OUT_ROOT / "a2b"
 A2B_METRICS_DIR = A2B_DIR / "metrics"
+A2C_DIR = OUT_ROOT / "a2c"
 
 # ---------------------------------------------------------------------------------------------
 # Samples. Pair 1 only -- MERSCOPE_WT_2 / AD_2 do not enter this manuscript.
@@ -223,6 +224,66 @@ COMBINED_SHIFT_Y = 7200
 COMBINED_CUTOFF = 6250
 
 
+# ============================================================ A2c ============================================================ #
+# Functional co-clustering of co-detected genes.
+#
+# Runs on the FULL published detection, not A2a's subset: conditioning on unique-gene count would
+# select on the very statistic being measured. Single-gene granules contribute no pairs under
+# either the observed data or the null, so they are harmless.
+
+def panel_annotation_path(sample="WT"):
+    """The panel's own curated annotation. Richer than REF_GENES and, crucially, it carries both
+    localization groups and co-expression groups -- see PANEL_GROUP_COLUMNS."""
+    return data_dir(sample) / "gene_panel.csv"
+
+
+# Which annotation columns to use, and what kind of gene programme each represents.
+#
+# This split is the whole point. If mcDETECT granules are packaged transport structures, the
+# LOCALIZATION groups should co-occur above chance. If they were merely local co-expressed
+# transcript clusters -- Reviewer #2's alternative -- then the CO-EXPRESSION groups (cell-type,
+# regional and layer marker sets) would co-occur at least as strongly, because those genes are
+# co-expressed by definition. The contrast is the test; neither arm is decoration.
+PANEL_GROUP_COLUMNS = {
+    "Synapse markers": "localization",       # pre-syn, post-syn
+    "Neuropil": "localization",              # Neuropil, Dendrites, Axons
+    "Cell type markers": "co-expression",    # 8 cell types
+    "Region markers": "co-expression",       # 15 regions
+    "Layer markers": "co-expression",        # 6 cortical layers
+}
+
+# "Xenium" appears in the Neuropil column as a panel-provenance tag (which genes came from the
+# Xenium panel), not a functional group -- it would be meaningless as a co-occurrence set.
+PANEL_EXCLUDE_LEVELS = {"Xenium"}
+
+# A group needs this many NON-SEED genes to be tested; below it the within-group pair count is too
+# small to say anything. Groups that fall out are reported, never dropped silently.
+MIN_GROUP_SIZE = 4
+
+# Null model. Degree-preserving CURVEBALL trade chain, implemented in
+# a2_common.curveball / a2_common.cooccurrence_enrichment. It holds both margins EXACTLY -- each
+# granule keeps its number of distinct genes, each gene keeps how many granules it appears in --
+# which removes the two effects that would otherwise masquerade as co-occurrence.
+#
+# A bipartite configuration model (maximum entropy, degrees fixed only IN EXPECTATION) was the
+# original choice and was rejected on measurement, so it has no constants here: a granule with
+# exactly k genes contributes exactly C(k,2) pairs, while a soft-degree null contributes ~k^2/2 --
+# a factor k/(k-1) that at the median complexity of ~5 genes over-estimates every pair by ~25%,
+# and inflated z by ~96 sd on simulated data. Curveball's constraints are hard, so it has no such
+# bias. See README.md, "How z is computed, for one gene pair".
+
+GROUP_TEST_N_PERM = 2000        # gene -> group label permutations
+GROUP_TEST_SEED = 0
+
+# Validation (notebook section 6)
+CURVEBALL_SUBSAMPLE = 50_000
+CURVEBALL_N_RANDOM = 20
+CURVEBALL_SEED = 0
+
+# Programme colours, kept in step with A2_figures.R (R cannot import this module).
+PROGRAMME_COLORS = {"localization": "#4f7fa8", "co-expression": "#d98b5f"}
+
+
 # ============================================================ A2b ============================================================ #
 
 # Detection kwargs, verbatim from the fine pass.               # from code/3_detection.py:82-84
@@ -341,5 +402,5 @@ def resolve_n_jobs(n_jobs=None):
 
 
 def ensure_dirs():
-    for d in [A2A_MULTIGENE_DIR, A2A_READSTRATA_DIR, A2B_DIR, A2B_METRICS_DIR]:
+    for d in [A2A_MULTIGENE_DIR, A2A_READSTRATA_DIR, A2B_DIR, A2B_METRICS_DIR, A2C_DIR]:
         d.mkdir(parents=True, exist_ok=True)

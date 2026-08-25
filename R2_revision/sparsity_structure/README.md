@@ -13,8 +13,11 @@ read-count strata — local, in a notebook, because it has two manual-annotation
 embedding chain on it — entirely on HGCC under SLURM, no notebook. Only `A2_figures.R` is local
 for A2b.
 
-A2c (gene–gene functional co-clustering) is deferred; A2d (promoting Fig. R9 to the supplement)
-needs no new computation and is superseded by A2a section 1.
+**A2c** asks whether the genes co-detected inside a granule are non-randomly associated — local, in
+a notebook, and independent of both A2a and A2b. It answers **yes** for the genes detection never
+touches, and **no** to the follow-up question of whether that association is organised by
+localization rather than co-expression; both halves are reported. A2d (promoting Fig. R9 to the
+supplement) needs no new computation and is superseded by A2a section 1.
 
 ---
 
@@ -56,6 +59,54 @@ nuclear-enriched panel genes — so "unique genes" needs a stated denominator. T
 excludes those 19 (`C.EXCLUDE_NC_FROM_COMPLEXITY = True`); the all-290 count is exported beside
 it as a sensitivity column.
 
+### Two provenance traps, both real, both already handled
+
+**1. `granule_id` has two conventions.** They label the same positional key and joining them
+naively matches nothing:
+
+| Artifact | `granule_id` | Why |
+|---|---|---|
+| `output/<dataset>/granule_reads_unique_genes_per_granule.parquet` | `'0'`, `'1'`, … | `4_post_detection.ipynb` cells 21-22 wrote `granule_adata.obs_names`, and `profile()` builds `AnnData(X, obs=granule.copy())`, so obs_names inherit the granules DataFrame's RangeIndex |
+| every AnnData's `obs["granule_id"]` | `'gnl_0'`, `'gnl_1'`, … | set separately at `model.py:467` |
+
+`A2.normalise_granule_id` reconciles them and **raises** on anything that is neither, rather than
+returning something that quietly fails to join. Everything else — the subtype-label parquet and
+`neuropil_subdomains_granule_adata.h5ad` — uses `gnl_i`, so only the Fig. R9 cross-check needs it.
+
+**2. Only one published artifact used `buffer = 0.01`.** `profile()` defaults to `buffer = 0.0`
+(`model.py:432`), and every call producing a published *result* omits the argument:
+
+| Call site | buffer | Produces |
+|---|---|---|
+| `code/3_detection.py:111` | **0.00** | per-sample `granule_adata_tsne.h5ad` |
+| `code/4_post_detection.ipynb` cell 19 | **0.00** | the combined `granule_adata_tsne.h5ad` — the object subtyping, t-SNE, microdomains and DE all run on |
+| `code/benchmark/benchmark_subtyping.ipynb` cell 10 | **0.00** | the published k = 15 subtype labels |
+| `code/benchmark/benchmark_clustering.py:65` | **0.00** | the published silhouette / ARI benchmark |
+| `code/4_post_detection.ipynb` cells 21-22 | **0.01** | *only* the Fig. R9 reads / unique-genes parquet |
+
+The two radii disagree very differently by measure — a minimum-enclosing sphere has 2-4 support
+points sitting *exactly* on its surface, so a 0.01 µm buffer systematically captures a few more
+transcripts:
+
+| Measure | exact agreement | delta (0.00 − 0.01) | median at 0.00 | median at 0.01 |
+|---|---|---|---|---|
+| unique genes | 93.3 % | mean −0.07, range [−4, 0] | 4 | 4 |
+| reads | 12.0 % | mean −1.15, range [−9, 0] | 5 (pooled) | **6** (WT) / **7** (AD) |
+
+Against a median of ~5 reads a difference of 1–3 reads is a large *relative* difference; neither
+number is wrong, they are two measurements of the same spheres. So section 1 splits them:
+
+- the **≥ 3 filter** runs on the **buffer = 0.00** unique-gene count, i.e. the same matrix the
+  subset is taken from, so every retained granule genuinely has ≥ 3 genes in the profile carried
+  forward — and it is the conservative direction, since 0.00 yields equal-or-fewer genes;
+- the **reported read distribution** is the **published buffer = 0.01** one, so the supplement,
+  the manuscript and the reviewer's *"median 6–7 reads / 4 genes"* all agree;
+- the unique-gene distribution is reported at 0.00, matching the filter, which costs nothing
+  because the medians are identical at 4.
+
+`complexity_summary.csv` and `complexity_histogram.parquet` carry a `buffer` column so each panel
+is self-documenting, and `complexity_crosscheck.csv` holds every number in the table above.
+
 ---
 
 ## Files
@@ -65,6 +116,7 @@ a2_config.py                 paths, gene sets, every constant; the only place to
 a2_common.py                 ported computation (subtyping, density, permutation, scoring, exports)
 
 A2a_multigene.ipynb          A2a end to end            [local, mcDETECT-env]
+A2c_cooccurrence.ipynb       A2c end to end            [local, mcDETECT-env]
 run_permutation_detect.py    A2b stage 1, one permuted detection (10 tasks)  [HGCC, SLURM array]
 score_embedding.py           A2b stage 2, one COMBINED arm (6 tasks); --concat  [HGCC, array]
 slurm/run_permutation.sh     detection array wrapper
@@ -72,6 +124,8 @@ slurm/score_embedding.sh     scoring array wrapper
 slurm/concat.sh              stitches the per-arm tables
 slurm/submit.sh              submits all three with the right dependencies
 A2_figures.R                 all figures, per-section toggles         [local]
+build_response_doc.py        builds plans/Response_R2_comment6_sparsity.docx  [local]
+verify_response_doc.py       re-reads every asserted cell from its source     [local]
 ```
 
 Outputs (git-ignored):
@@ -86,6 +140,8 @@ output/
 │   ├── perm_<sample>_seed<N>/   all_granules.parquet, granules.parquet, granule_profile.h5ad
 │   ├── combined_{real,seed<N>}/ the combined WT+AD object that is actually embedded
 │   └── metrics/             per-arm + concatenated CSV/Parquet, t-SNE jpegs
+├── a2c/                     pair + group enrichment, clustermap, groups tested/dropped,
+│                            go_abundance_stratified.csv
 └── figures/                 everything A2_figures.R draws
 ```
 
@@ -253,6 +309,238 @@ and `A2_figures.R` §5 prints the skipped series before plotting.
 
 No subtyping, no density, no microdomains for A2b.
 
+---
+
+## A2c — functional co-clustering of co-detected genes
+
+**What it targets.** Reviewer #2, major point 6: *"because detection seeds on individual marker
+genes, each granule essentially expresses just the single marker it was detected on … The granule
+subtypes … therefore largely reflect the seeding marker rather than any genuine multi-gene granule
+transcriptome."* A2c tests that directly, on the part of a granule mcDETECT **never touches** — the
+270 non-seed genes.
+
+The reviewer did not ask for a co-clustering analysis; that comes from our own action notes under
+the same point. The claim quoted above is the thing to disprove.
+
+### What came out — one positive result and two negative ones
+
+Stated first, because the section below is method and the method is not the news.
+
+**Positive, and it is the answer to the quoted claim.** Among the 270 genes detection never uses,
+co-occurrence is strongly non-random: **33.9 %** of the 36,315 gene pairs reach z > 2 against the
+2.5 % expected, **17.8 %** survive a Bonferroni threshold of z > 4.83, and the strongest pairs are
+transparently interpretable modules — the neurofilament triplet (`Nefm`–`Nefh`, `Nefm`–`Nefl`), the
+two GABA-synthesis enzymes (`Gad2`–`Gad1`), an oligodendrocyte pair (`Cnp`–`Sox10`), and
+synaptic-vesicle machinery around `Stxbp1`. A granule whose content were exhausted by its seeding
+marker could not produce this.
+
+**Negative 1 — the localization-versus-co-expression contrast did not separate.** This section was
+built so that it could fail, and it did. Taking the median across groups, **co-expression reaches
+3.10 and localization 2.24** — the control programme scores *higher*. Ranked individually, one
+localization group leads (Axons, 37.3, but on only four genes) and the next five are all
+co-expression: Astrocytes 10.5, Microglia 10.5, OPC 9.0, Oligodendrocytes 7.9, Inhibitory neurons
+7.8. `pre-syn` reaches 5.4, while **`post-syn` (16 genes, −0.90) and `Neuropil` (39 genes, the
+largest localization group, −1.65) sit at or below the 0.35 background.** The ordering survives
+every robustness arm: co-expression leads localization in `all` (3.10 / 2.24), `Isocortex`
+(0.75 / 0.56) and `WT` (2.31 / 1.50), and only in `AD` does localization edge ahead, by 1.57 to
+1.40. So A2c shows the non-seed content is
+structured, but it does **not** show that structure is organised by localization rather than by
+co-expression.
+
+**Negative 2 — the external GO check is negative too.** See "The external GO check" below.
+
+Both negatives are reported in the response document
+(`build_response_doc.py` §3.0, §3.3) and §3.3 is written to be removable for exactly this reason.
+
+### Scope: the full detection, non-seed genes only
+
+**Not A2a's subset.** A2c runs on the **full** published detection, all 1,080,146 granules.
+Conditioning on unique-gene count, as A2a does, would select on the very statistic being measured.
+Granules with fewer than two genes contribute no pairs under either the data or the null, so
+dropping them costs nothing.
+
+**Not A2b's null.** A2b permutes at the detection level to answer a different question. Here the
+null is a degree-preserving shuffle of the granule × gene table.
+
+**Non-seed only.** `merge_sphere()` merges overlapping spheres seeded by *different* markers, so
+co-occurrence among the 20 seed markers is partly manufactured by detection — 64.7 % of granules
+carry ≥ 2 of them. Running the analysis on the seeds would reproduce exactly the circularity the
+reviewer objects to. The seed arm is still computed as a **positive control for the statistic**, and
+labelled detection-confounded wherever it appears. It behaves as designed: median z **16.5** across
+its 190 pairs, against **0.35** for the 36,315 non-seed pairs.
+
+### How `z` is computed, for one gene pair
+
+This is the metric the whole section rests on. Implementation: `a2_common.py:607-744`
+(`curveball`, `cooccurrence_enrichment`), driven by `run_arm` in `A2c_cooccurrence.ipynb` §2.
+Tables named below live in `output/a2c/`; figures and their backing CSVs in `output/figures/`.
+
+**0 — the matrix.** Binarise the published combined granule object's `layers["counts"]` to a
+granule × gene presence/absence matrix `B`. Co-occurrence is a question about which genes are
+*there*, not how many copies. Two filters, and the order matters:
+
+1. **Columns first** (`run_arm`): restrict to the arm's genes — 270 non-seed for the primary arm.
+2. **Rows second** (`a2_common.py:692-694`): drop granules with fewer than 2 genes *within that
+   column set*. The primary arm keeps **593,195** granules and drops 486,951.
+
+Because the row filter runs after the column subset, each arm uses a different granule set (593,195
+for non-seed, 698,526 for the seed control). That is correct — the dropped granules carry no pairs
+either way — but the arms are not on identical granules and should not be described as if they were.
+
+One guard that is not optional (`a2_common.py:687-691`): `B` is cast to `float64` **before** any
+multiplication. A boolean sparse matmul is *logical* — `True + True = True` — so `BᵀB` would
+saturate every observed count at 1 while the null, built numerically, counted properly. That
+produces a large abundance-dependent deficit that looks exactly like real biology.
+
+**1 — observed.** `O = Bᵀ B`, so `O_ij` is the number of granules containing **both** gene *i* and
+gene *j*. Asserted `O.max() <= n_granules`, which fails loudly if the matrix ever arrives
+non-binary.
+
+**2 — the null ensemble.** The null must remove the two effects that would otherwise masquerade as
+co-occurrence: **complex granules pair everything with everything**, and **abundant genes pair with
+everything**. So it holds both margins — each granule's gene count, each gene's granule count —
+**exactly**, not in expectation, using the curveball trade algorithm (Strona et al., *Nat Commun*
+5:4114, 2014; `a2_common.py:607`). One trade, on two rows held as index sets:
+
+```
+shared = ra ∩ rb;   only_a = ra − shared;   only_b = rb − shared
+pool   = shuffle(only_a ∪ only_b)
+ra ← shared ∪ pool[:|only_a|]      rb ← shared ∪ pool[|only_a|:]
+```
+
+Row sums are preserved because each row gets back exactly as many non-shared elements as it gave.
+Column sums are preserved because every index in the pool appears exactly once going in and exactly
+once coming out. Both constraints are hard — no rejection step, no approximation, no tolerance.
+
+Chain schedule for the primary arm (`nnz` = 3,257,809 detections; all recorded in `run_info.csv`):
+
+| | trades |
+|---|---|
+| burn-in | 5 × nnz = **16,289,045** |
+| then **20** states, each separated by | 1 × nnz = **3,257,809** |
+
+**3 — expectation and spread.** Each null state is rescored the same way, `O⁽ᵇ⁾ = B⁽ᵇ⁾ᵀ B⁽ᵇ⁾`.
+Running sums of `O⁽ᵇ⁾` and `O⁽ᵇ⁾²` give
+
+```
+Ê   = mean_b O⁽ᵇ⁾
+Var = max( mean_b O⁽ᵇ⁾² − Ê² , 0 ) × 20/19        sd = √Var
+```
+
+The `max(·, 0)` clamps floating-point cancellation; the 20/19 is Bessel's correction. **Both `Ê` and
+`sd` are empirical** — nothing analytic enters at any point.
+
+**4 — the statistic.**
+
+```
+z_ij = (O_ij − Ê_ij) / sd_ij
+```
+
+Non-finite values (a pair that never co-occurs in any null state gives sd = 0) become `NaN`; the
+diagonal is `NaN`. Only the upper triangle is emitted — 36,315 rows for 270 genes — alongside
+`log2_obs_over_exp = log2((O+1)/(Ê+1))` as a pseudocounted effect size. Worked example, the top pair
+in `pair_enrichment.parquet`:
+
+```
+Vamp1–Nefh:   O = 4513    Ê = 1487.95    sd = 25.63    →    z = 118.0
+```
+
+For scale when reading any single value, the primary arm's z runs
+**−20.0 / −2.18 / 0.35 / 3.29 / 25.4** at the 1st / 25th / 50th / 75th / 99th percentiles.
+
+**Why not an analytic null.** The obvious shortcut is a bipartite configuration model that fixes the
+degrees only *in expectation*. It was tried and rejected on measurement, and the bias is not subtle:
+a granule with exactly *k* genes contributes exactly `C(k,2)` pairs, whereas a soft-degree null
+contributes about `k²/2` — a factor `k/(k−1)`, which at the median complexity of ~5 genes is a
+**~25 % over-estimate applied to every pair**. On simulated data it inflated z by ~96 sd. Curveball
+has no such bias because its constraints are hard.
+
+**What `z` is and is not used for.** It is **never** converted to a per-pair p-value. It feeds
+exactly two things: the 270 × 270 clustermap, and the group test below, whose significance comes
+from permuting gene → group labels rather than from assuming z is normal. So the only property z
+needs is that it is computed identically for every pair — which it is.
+
+**Three caveats, stated rather than buried.**
+
+- **`n_null = 20` is small.** The Monte-Carlo error on `Ê` is `1/√20` = **0.224 null sd**, recorded
+  as `mc_error_frac_of_sd` in `run_info.csv`; `sd` itself carries only 19 df (~16 % relative error).
+  Roughly a fifth of a standard deviation of any z is estimation, not signal. This is a second
+  reason z gets no p-value: z = 118 is far past what 20 draws could resolve as a tail probability.
+- **The 20 states come from one chain**, spaced `nnz` trades apart, not from independent restarts.
+  The variance estimate treats them as independent. At that spacing this is reasonable, but it is an
+  assumption, not a proof.
+- **Calibration is checked, not assumed — but the gate is off by default.** Setting
+  `VALIDATE = True` (notebook §6a) curveballs a 50 K-granule submatrix 10 × `nnz` to draw a matrix
+  *from the estimator's own null*, rescores it, and asserts z comes back ~N(0,1)
+  (`|mean| < 0.25`, `0.8 < sd < 1.3`). **`output/a2c/null_calibration.csv` does not currently
+  exist.** `build_response_doc.py` now reads that file rather than quoting a remembered number, so
+  the notebook must be run once with `VALIDATE = True` before the response document will build.
+
+### The group-level test
+
+**Statistic:** the median z over within-group pairs. **Significance:** permuting the gene → group
+assignment across all non-seed genes at fixed group size, 2,000 replicates, BH-corrected across
+groups (`a2_common.py:755`). Pairs share genes and are emphatically not independent, so a test
+treating them as independent observations would be badly anti-conservative.
+
+**The permutation is abundance-matched, and it has to be.** Rare genes carry systematically higher
+z, and the two programmes differ ~5.5-fold in abundance — localization groups have a median of
+**~17,800** detections against **~3,250** for co-expression groups. An unmatched permutation would
+compare abundant groups against mostly-rare random sets and bias the comparison before any biology
+entered. Each replicate is therefore drawn with the group's own abundance-bin composition.
+
+**Groups** come from the panel's own curated annotation (`gene_panel.csv`), which supplies both
+kinds of programme. **28 groups** clear `MIN_GROUP_SIZE = 4` non-seed genes:
+
+| programme | groups tested |
+|---|---|
+| **localization** | 4 — pre-syn (19 genes), post-syn (16), Neuropil (39), Axons (4) |
+| **co-expression** | 24 — 8 cell-type sets, 11 regional sets, 5 cortical-layer sets |
+
+Six fall below the threshold and are listed in `groups_dropped.csv` rather than dropped silently —
+including **Dendrites** (3 genes), so one localization group is lost to panel size.
+
+**The logic of the contrast.** Functional coherence on its own does *not* separate a granule from
+"any co-expressed transcript cluster" — coherence is what co-expression looks like. What could
+separate them is *which* programme organises the co-occurrence: if these are packaged transport
+structures, localization sets should stand out and co-expression sets have no particular reason to.
+As reported above, they did not separate.
+
+**The Isocortex arm is the check on the regional confound**, and it does work as intended: within
+one region the regional marker sets collapse (HPF-CA −3.97 → −0.33, HY 5.30 → −0.16, TH 3.39 → 0.55,
+STR 1.17 → −0.10), confirming they were reporting tissue composition. But the background falls too
+(median z 0.35 → 0.05) and the cell-type sets remain the leaders, so the collapse does not rescue
+the contrast.
+
+### The external GO check
+
+Independent of the panel's annotation, and it covers every non-seed gene rather than only the
+annotated ones: do pairs sharing a GO biological-process term co-occur more strongly?
+
+**Pooled, the answer is no** — and in the wrong direction. Pairs sharing a term have a *lower*
+median z than pairs that do not: **0.078 vs 0.464** (Δ −0.386, n = 8,571 vs 21,564).
+
+**Stratified by abundance, it is a null rather than a reversal.** GO-annotated genes are the
+better-studied, more abundant ones, and abundance drives z — the same confound that forced
+abundance matching into the group permutation. Re-testing within expected-count deciles and
+combining with a signed-rank test on the ten per-decile differences
+(`a2c/go_abundance_stratified.csv`) gives 8/10 deciles negative, median Δ −0.357, **p = 0.105**.
+So the pooled negative is largely the
+confound; what remains is not significant, but it is not positive either.
+
+**And the structure is not concentrated in a few modules.** Stratifying pairs by z
+(`figures/a2c_go_by_z_bin.csv`) gives a U-shape against a 28.4 % baseline: 1.22× in the
+most-depleted decile and 1.12× in the most-enriched, flat in between. Neither the "few strong
+functional modules" reading
+nor the "broad similarity gradient" reading survives.
+
+**Runtime.** The null is an exact curveball chain over ~3.3 M detections. On the recorded run the
+primary arm took **4.9 min** and all five arms **14.4 min** (`run_info.csv`); budget more on a
+loaded machine. `DRY_RUN = True` subsamples and uses five null draws — run that first; its numbers
+are indicative only.
+
+---
+
 ## Run order
 
 ```bash
@@ -279,7 +567,24 @@ cat output/a2b/metrics/a2b_status.csv              # any series that was too sma
 
 # ---------- figures: local ----------
 Rscript A2_figures.R
+
+# ---------- response document: local, after every figure run ----------
+python3 build_response_doc.py       # -> plans/Response_R2_comment6_sparsity.docx
+python3 verify_response_doc.py      # re-reads every asserted cell from its source
 ```
+
+`A2_figures.R` covers **all three** analyses: sections 1-4 plot A2a, section 5 plots A2b, section 6
+plots A2c. Every block is guarded by a file check, so running it before the HGCC sweep prints
+`[skip 5] missing: ...` and carries on; `RUN_A2B <- FALSE` at the top silences it.
+
+Toggles worth knowing about, all at the top of the script:
+
+| toggle | section | effect |
+|---|---|---|
+| `RUN_GSEA` | 3 | microdomain DE → GSEA. Pulls in clusterProfiler and is the slow one; also gates the GO test in section 6 |
+| `RUN_GSEA_CHORD` | 3 | gene × pathway chord diagrams in the published mcDETECT style, on by default. Each is a 4000 × 4000 JPEG, so it roughly doubles section 3's output count |
+| `COMPOSITION_BY_SAMPLE` | 2 | additionally facets the all-vs-multi-gene subtype composition bars by WT / AD |
+| `RUN_A2B` | 5 | set `FALSE` to silence the permutation block before the HGCC sweep lands |
 
 **Reruns.** Finished detection tasks are skipped, so resubmit only the failed ids
 (`sbatch --array=<id1>,<id2> slurm/run_permutation.sh`). `concat` runs on `afterany` and names
@@ -313,21 +618,32 @@ through the **identical** pipeline, so it must call the published code, not a fa
 
 ## Which output backs which claim
 
-There is no intermediate summary document; every number in the response letter should be
-re-derivable from `output/` alone.
+Every number in the response letter is re-derivable from `output/` alone — and that rule is
+enforced rather than trusted. `build_response_doc.py` composes
+`plans/Response_R2_comment6_sparsity.docx` by reading these files, so its prose and its tables
+cannot drift apart, and `verify_response_doc.py` re-reads every asserted cell from its source
+afterwards. Nothing in the document is typed by hand.
 
 | Response element | Source |
 |---|---|
 | "`comp` counts markers, not genes" | `a2a/multigene/comp_vs_ngenes.parquet`, `figures/comp_vs_unique_genes.jpeg` |
-| Reads / unique genes per granule (Fig. R9) | `a2a/multigene/complexity_summary.csv`, `figures/complexity_n_{reads,genes}_all.jpeg` |
+| Reads / unique genes per granule (Fig. R9) | `a2a/multigene/complexity_summary.csv`, `figures/complexity_n_{reads,genes}_all.jpeg` — reads at the published buffer = 0.01 |
+| Buffer / `granule_id` provenance, if queried | `a2a/multigene/complexity_crosscheck.csv` |
 | "n granules retained at ≥ 3 unique genes" | `a2a/multigene/retention_by_region.csv`, `figures/multigene_retention.jpeg` |
 | Subtype structure persists | `a2a/multigene/heatmap_subtype{,_ordered}.jpeg`, `subtype_composition.csv` |
+| Subtype **composition** shifts but keeps its WT/AD direction | `figures/subtype_composition_all_vs_multigene.{csv,jpeg}` (pooled two-bar), `figures/subtype_composition_all_vs_multigene_by_sample.{csv,jpeg}` (WT/AD facets) |
 | AD pre-synaptic reduction persists | `a2a/multigene/subtype_density_per_region_multigene.csv`, `figures/granule_density_multigene_pre-syn.jpeg`, `figures/granule_density_all_vs_multigene.jpeg` |
-| Microdomain contrast persists | `a2a/multigene/neuropil_subdomains_Isocortex_50/`, `figures/gsea_terms_published_vs_multigene.csv` |
+| Microdomain contrast persists | `a2a/multigene/neuropil_subdomains_Isocortex_50/`, `figures/gsea_terms_published_vs_multigene.csv` (carries `layer`/`target`/`reference`, so each NES's contrast is explicit) |
+| Enriched pathways, in the published mcDETECT figure style | `a2a/multigene/neuropil_subdomains_Isocortex_50/*_{positive,negative}_chord_{diagram,legend}.jpeg` — gene × pathway chords, one pair per DE table per direction, beside the `*_{target,reference}_GSEA.jpeg` dotplots |
+| Microdomain **partition** persists, not only the DE | `figures/subdomain_correspondence.{csv,jpeg}` — spot-level map of multi-gene vs published subdomains on the same inherited grid; section 3 also states at run time whether the chosen contrast points the same way as the published one |
 | "not a low-count artifact" | `a2a/readstrata/readstrata_density.csv`, `figures/readstrata_density_*.jpeg` |
 | "randomized data does not give the same embedding" | `a2b/metrics/a2b_metrics.csv`, `figures/a2b_silhouette_score.jpeg`, `figures/a2b_ari_stability_mean.jpeg`, `figures/a2b_structure_at_k15.csv` — quote the **size-matched** facet |
 | Permutation yields a different granule count | `figures/a2b_granule_counts.jpeg`, `a2b/metrics/a2b_detection_summary.csv` |
 | Any null arm too small to embed | `a2b/metrics/a2b_status.csv` |
+| Granules carry structured non-seed content | `a2c/pair_enrichment.parquet` (per-pair `observed`/`expected`/`null_sd`/`z`), `a2c/run_info.csv` (null schedule + MC error), `a2c/group_enrichment.csv`, `figures/a2c_group_enrichment.jpeg` |
+| Localization vs co-expression — **the contrast did not separate** | `figures/a2c_programme_summary.csv`, `figures/a2c_group_enrichment_by_arm.jpeg` (Isocortex column is the regional control). Quote this as the negative result it is, not as support |
+| GO check — **also negative** | `figures/a2c_go_shared_term_test.csv` + `a2c_go_shared_term.jpeg` (pooled), `a2c/go_abundance_stratified.csv` (the confound, and the null that survives it), `figures/a2c_go_by_z_bin.{csv,jpeg}` + `a2c_pair_go.parquet` (neither concentrated nor a gradient) |
+| Co-occurrence block structure | `a2c/cooccurrence_clustermap.jpeg`, `a2c/clustermap_gene_order.csv` |
 | Permuted detections are somatic | `figures/a2b_in_soma_survival.jpeg`, `a2b/metrics/a2b_detection_summary.csv` |
 | Real vs permuted t-SNE | `a2b/metrics/tsne_matched_{real,perm}_seed0.jpeg` (equal n — use this pair), `tsne_real.jpeg` / `tsne_perm_seed*.jpeg` (full n) |
 
@@ -343,16 +659,34 @@ microdomain contrast survive restriction to granules that cannot be explained by
 marker alone, and that the WT/AD effect is not confined to the lowest read tercile. A2b shows the
 embedding structure is not reproduced by data with identical positions, identical density and
 identical per-gene totals — and, because of the size-matched arms, not merely because the null
-has fewer granules to work with.
+has fewer granules to work with. A2c shows the genes detection never touches are non-randomly
+co-detected: 33.9 % of non-seed pairs reach z > 2 against 2.5 % expected, 17.8 % survive
+Bonferroni, and the strongest pairs are interpretable modules. That is a direct answer to
+*"each granule essentially expresses just the single marker it was detected on"*.
 
-**Does not.** Neither is a test of whether granules are biologically real — that burden sits with
-A3 (ambient / pseudo-granule controls) and the EM validation. A2b's null is a *global* shuffle:
-it destroys all spatial gene structure, including the regional composition gradients that any
-real tissue has, so it is the reviewer's stated hypothetical rather than the strictest possible
-null. A block-wise permutation preserving regional composition would be a harder test; it is not
-what was asked for, and it is noted here so the choice is on the record rather than implied.
+**Does not.** None of the three is a test of whether granules are biologically real — that burden
+sits with A3 (ambient / pseudo-granule controls) and the EM validation.
 
-Two further caveats worth disclosing in Methods: A2a's absolute densities are lower than the
-published ones purely because the subset is smaller — only the WT-vs-AD direction transfers; and
-A2a's subdomains are recomputed, so their numbering carries no relation to the published
-Subdomain 1–4.
+**A2c specifically does not establish that the co-occurrence is *localization*-organised.** Its
+own discriminating contrast failed: co-expression groups score at or above localization groups in
+every arm, `post-syn` and `Neuropil` sit at background, and the external GO check is negative
+pooled and null once abundance-stratified. Showing that co-detected genes are functionally related
+would not by itself separate a granule from "any co-expressed transcript cluster" anyway — that is
+why the control was built in, and the control did not come out our way. Report it; do not lean the
+argument on it.
+
+**A2b's null is a *global* shuffle.** It destroys all spatial gene structure, including the
+regional composition gradients that any real tissue has, so it is the reviewer's stated
+hypothetical rather than the strictest possible null. A block-wise permutation preserving regional
+composition would be a harder test; it is not what was asked for, and it is noted here so the
+choice is on the record rather than implied.
+
+Three further caveats worth disclosing in Methods:
+
+- A2a's absolute densities are lower than the published ones purely because the subset is smaller —
+  only the WT-vs-AD direction transfers.
+- A2a's subdomains are recomputed, so their numbering carries no relation to the published
+  Subdomain 1–4.
+- A2c's single strongest group, Axons, rests on **four** non-seed genes and six pairs. It is the
+  one localization group that behaves as the design predicted, and it is too small to carry weight
+  on its own.

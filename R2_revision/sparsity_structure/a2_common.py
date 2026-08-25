@@ -57,6 +57,35 @@ def unique_gene_counts(counts, gene_names=None, exclude_genes=None):
     return n_reads.astype(np.int64), n_genes.astype(np.int32)
 
 
+def normalise_granule_id(ids):
+    """
+    Put either positional granule_id convention onto the `gnl_i` form.
+
+    Two published artifacts label the same positional key differently, and joining them without
+    this silently matches nothing:
+
+      * `output/<dataset>/granule_reads_unique_genes_per_granule.parquet` holds `'0','1','2',...`
+        -- code/4_post_detection.ipynb cells 21-22 wrote `granule_adata.obs_names`, and
+        `profile()` builds `AnnData(X=X, obs=granule.copy())`, so obs_names inherit the granules
+        DataFrame's RangeIndex;
+      * every AnnData's `obs["granule_id"]` holds `'gnl_0','gnl_1',...`, set separately at
+        mcDETECT_package/mcDETECT/model.py:467.
+
+    Both index the same `granules.parquet` row order, so they are one key under a rename.
+
+    Raises on anything that is neither convention, rather than returning something that will
+    quietly fail to join.
+    """
+    ids = pd.Index(ids).astype(str)
+    if ids.str.fullmatch(r"\d+").all():
+        return "gnl_" + ids
+    if ids.str.fullmatch(r"gnl_\d+").all():
+        return ids
+    bad = ids[~ids.str.fullmatch(r"(gnl_)?\d+")][:3].tolist()
+    raise ValueError(
+        f"granule_id is neither the 'gnl_i' nor the positional convention; e.g. {bad}")
+
+
 def read_terciles(n_reads, labels=("low", "mid", "high")):
     """Split granules into read-count terciles. Ties go to the lower stratum (`qcut` semantics),
     and duplicate edges are tolerated because read counts are small integers."""
@@ -528,6 +557,288 @@ def score_embedding_structure(X, k_range, n_init=20, batch_size=5000,
                               silhouette_sample_size, silhouette_seed) for k in ks)
     # Sort by k so the table is deterministic regardless of completion order.
     return pd.DataFrame(rows).sort_values("n_clusters").reset_index(drop=True)
+
+
+# ==================================================================================================
+# A2c -- gene co-occurrence
+# ==================================================================================================
+
+def load_panel_annotation(path, genes, group_columns, exclude_levels=(), seed_genes=(),
+                          min_size=4):
+    """
+    The panel's own curated gene groups, tidied and filtered to what can actually be tested.
+
+    Returns (groups, dropped):
+      groups  -- list of dicts: column, group, programme, genes (non-seed only), n_genes, n_pairs
+      dropped -- DataFrame of groups that fell below `min_size`, so nothing vanishes silently
+
+    Only NON-SEED genes are kept. mcDETECT's merge_sphere() merges overlapping spheres seeded by
+    different markers, so co-occurrence among the 20 seed markers is partly manufactured by
+    detection; including them would reproduce exactly the circularity Reviewer #2 objects to.
+    """
+    panel = pd.read_csv(path)
+    panel.columns = [c.strip().lstrip("﻿") for c in panel.columns]
+    panel["Gene"] = panel["Gene"].astype(str).str.strip()
+
+    genes = set(genes)
+    seed_genes = set(seed_genes)
+    exclude_levels = set(exclude_levels)
+
+    keep, dropped = [], []
+    for col, programme in group_columns.items():
+        if col not in panel.columns:
+            raise KeyError(f"{path} has no column {col!r}; columns are {list(panel.columns)}")
+        d = panel[["Gene", col]].copy()
+        d[col] = d[col].astype(str).str.strip()
+        d = d[(d[col] != "") & (d[col].str.lower() != "nan") & d["Gene"].isin(genes)]
+        for level, sub in d.groupby(col):
+            if level in exclude_levels:
+                continue
+            gs = sorted(set(sub["Gene"]) - seed_genes)
+            row = {"column": col, "group": level, "programme": programme,
+                   "n_genes": len(gs), "n_pairs": len(gs) * (len(gs) - 1) // 2}
+            if len(gs) < min_size:
+                dropped.append(row)
+            else:
+                keep.append({**row, "genes": gs})
+    return keep, pd.DataFrame(dropped)
+
+
+def curveball(rows, n_swaps, n_cols, rng):
+    """
+    One run of the curveball trade algorithm (Strona et al. 2014) on a list of row index-sets.
+
+    Curveball is a Markov chain over binary matrices that holds **both** margins exactly: every
+    trade swaps non-shared elements between two rows, so row sums never move and column sums
+    never move. Mutates `rows` in place.
+    """
+    n_rows = len(rows)
+    BATCH = 500_000
+    done = 0
+    while done < n_swaps:
+        m = min(BATCH, n_swaps - done)
+        A = rng.integers(0, n_rows, size=m)
+        Bx = rng.integers(0, n_rows, size=m)
+        for t in range(m):
+            a, b = A[t], Bx[t]
+            if a == b:
+                continue
+            ra, rb = rows[a], rows[b]
+            shared = ra & rb
+            only_a = ra - shared
+            only_b = rb - shared
+            if not only_a or not only_b:
+                continue
+            na = len(only_a)
+            pool = list(only_a | only_b)
+            rng.shuffle(pool)
+            rows[a] = shared | set(pool[:na])
+            rows[b] = shared | set(pool[na:])
+        done += m
+    return rows
+
+
+def _rows_to_csr(rows, n_cols):
+    from scipy.sparse import csr_matrix
+    lens = np.fromiter((len(r) for r in rows), dtype=np.int64, count=len(rows))
+    indptr = np.zeros(len(rows) + 1, dtype=np.int64)
+    np.cumsum(lens, out=indptr[1:])
+    indices = np.empty(indptr[-1], dtype=np.int32)
+    pos = 0
+    for r in rows:
+        k = len(r)
+        if k:
+            indices[pos:pos + k] = sorted(r)
+            pos += k
+    return csr_matrix((np.ones(indptr[-1], dtype=np.float64), indices, indptr),
+                      shape=(len(rows), n_cols))
+
+
+def cooccurrence_enrichment(B, gene_names, n_null=20, burnin_mult=5.0, spacing_mult=1.0,
+                            seed=0, verbose=True):
+    """
+    Observed vs expected gene-gene co-occurrence, against a degree-preserving null.
+
+    The null holds **both** margins exactly: each granule keeps its number of distinct genes, and
+    each gene keeps how many granules it appears in. Those are the two effects that would
+    otherwise masquerade as co-occurrence -- complex granules pair everything with everything,
+    and abundant genes pair with everything.
+
+    Why an empirical (curveball) null rather than an analytic one. The obvious analytic shortcut
+    is a maximum-entropy model that fixes the degrees only *in expectation* (the bipartite
+    configuration model). It is badly biased here, and the bias is not subtle: a granule with
+    exactly k genes contributes exactly C(k,2) pairs, whereas a soft-degree null contributes
+    ~k^2/2 -- a factor of k/(k-1), which at the median granule complexity of ~5 genes is a ~25%
+    over-estimate applied to every pair. Measured on simulated data that inflates z by ~96 sd.
+    Curveball has no such bias because its constraints are hard.
+
+        E[O_ij], Var[O_ij]  estimated from `n_null` post-burn-in states of the chain
+        z_ij = (O_ij - E_ij) / sd_ij
+
+    Granules with fewer than 2 genes are dropped: they contribute no pairs under the observed
+    data or the null, and carry no information either way.
+
+    Note the group-level p-values in `group_enrichment_test` come from permuting gene -> group
+    labels, not from assuming z is normal -- so what matters here is that z is computed
+    identically for every pair, which it is.
+
+    Returns (pairs_df, Z, info).
+    """
+    # Cast to a numeric dtype FIRST. A boolean sparse matmul is logical -- True + True is True --
+    # so B.T @ B would saturate the observed co-occurrence counts at 1 while the null, built with
+    # numeric data, counts properly. That produces a huge abundance-dependent deficit that looks
+    # exactly like real biology, so it must not be left to the caller to remember.
+    B = (B != 0).astype(np.float64).tocsr()
+    row_deg = np.asarray(B.sum(1)).ravel().astype(np.int64)
+    keep = row_deg >= 2
+    B = B[keep]
+    n_cols = B.shape[1]
+
+    O = np.asarray((B.T @ B).todense(), dtype=np.float64)
+    assert O.max() <= B.shape[0], "co-occurrence exceeds the granule count -- matrix not binary"
+
+    rows = [set(B.indices[B.indptr[i]:B.indptr[i + 1]].tolist()) for i in range(B.shape[0])]
+    nnz = int(B.nnz)
+    rng = np.random.default_rng(seed)
+
+    if verbose:
+        print(f"  null: {B.shape[0]:,} granules, {nnz:,} detections, "
+              f"burn-in {int(burnin_mult * nnz):,} trades, then {n_null} states "
+              f"spaced {int(spacing_mult * nnz):,} apart", flush=True)
+    curveball(rows, int(burnin_mult * nnz), n_cols, rng)
+
+    tot = np.zeros((n_cols, n_cols)); tot2 = np.zeros((n_cols, n_cols))
+    for b in range(n_null):
+        curveball(rows, int(spacing_mult * nnz), n_cols, rng)
+        Bn = _rows_to_csr(rows, n_cols)
+        On = np.asarray((Bn.T @ Bn).todense(), dtype=np.float64)
+        tot += On
+        tot2 += On * On
+        if verbose:
+            print(f"    null sample {b + 1}/{n_null}", flush=True)
+
+    E = tot / n_null
+    Var = np.maximum(tot2 / n_null - E * E, 0.0) * (n_null / max(n_null - 1, 1))
+    sd = np.sqrt(Var)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        Z = (O - E) / sd
+        log2fc = np.log2((O + 1.0) / (E + 1.0))
+    Z[~np.isfinite(Z)] = np.nan
+    np.fill_diagonal(Z, np.nan)
+
+    info = {"n_granules_used": int(keep.sum()), "n_granules_dropped": int((~keep).sum()),
+            "n_genes": n_cols, "n_null_samples": int(n_null), "nnz": nnz,
+            "burnin_trades": int(burnin_mult * nnz), "spacing_trades": int(spacing_mult * nnz),
+            # relative Monte-Carlo error on E, as a fraction of the null sd -- the honest
+            # statement of how much of z's wobble is estimation rather than signal
+            "mc_error_frac_of_sd": float(1.0 / np.sqrt(n_null))}
+
+    iu = np.triu_indices(n_cols, k=1)
+    pairs = pd.DataFrame({
+        "gene_i": np.asarray(gene_names)[iu[0]], "gene_j": np.asarray(gene_names)[iu[1]],
+        "observed": O[iu], "expected": E[iu], "null_sd": sd[iu],
+        "z": Z[iu], "log2_obs_over_exp": log2fc[iu],
+    })
+    return pairs, Z, info
+
+
+def _abundance_bins(weights, n_bins=10):
+    """Rank-based abundance bins, robust to ties and to heavily skewed detection counts."""
+    r = pd.Series(weights).rank(method="first")
+    try:
+        return pd.qcut(r, n_bins, labels=False, duplicates="drop").to_numpy()
+    except ValueError:
+        return np.zeros(len(weights), dtype=int)
+
+
+def group_enrichment_test(Z, gene_names, groups, gene_weights=None, n_bins=10,
+                          n_perm=2000, seed=0):
+    """
+    Is a gene group's within-group co-occurrence higher than a comparable random gene set?
+
+    Statistic: median z over within-group pairs. Significance by permuting the gene -> group
+    assignment, preserving group size -- pairs share genes and are emphatically not independent,
+    so a test treating them as independent observations would be badly anti-conservative.
+
+    **The permutation is abundance-matched** when `gene_weights` (per-gene detection counts) is
+    supplied, and it must be. Rare genes carry systematically higher z here, and the two gene
+    programmes differ ~5-fold in abundance (localization groups median ~17,800 detections,
+    co-expression groups ~3,250). An unmatched permutation would therefore compare abundant groups
+    against mostly-rare random sets and bias the result in a direction that has nothing to do
+    with biology. Matched permutation draws each replicate with the same per-abundance-bin
+    composition as the real group.
+
+    Returns a DataFrame, one row per group.
+    """
+    gene_names = list(gene_names)
+    idx = {g: i for i, g in enumerate(gene_names)}
+    n = len(gene_names)
+    rng = np.random.default_rng(seed)
+
+    matched = gene_weights is not None
+    if matched:
+        bins = _abundance_bins(np.asarray(gene_weights, dtype=float), n_bins=n_bins)
+        by_bin = {b: np.flatnonzero(bins == b) for b in np.unique(bins)}
+    else:
+        bins, by_bin = None, None
+
+    def draw(members):
+        """One permuted gene set: same size, and same abundance profile when matching is on."""
+        if not matched:
+            return rng.choice(n, size=len(members), replace=False)
+        want = pd.Series(bins[members]).value_counts()
+        picked, short = [], 0
+        for b, k in want.items():
+            pool = by_bin[b]
+            if len(pool) >= k:
+                picked.append(rng.choice(pool, size=k, replace=False))
+            else:                                   # thin bin: take it all, top up globally
+                picked.append(pool)
+                short += k - len(pool)
+        out = np.concatenate(picked) if picked else np.array([], dtype=int)
+        if short:
+            rest = np.setdiff1d(np.arange(n), out, assume_unique=False)
+            out = np.concatenate([out, rng.choice(rest, size=short, replace=False)])
+        return out
+
+    def median_within(members):
+        if len(members) < 2:
+            return np.nan
+        sub = Z[np.ix_(members, members)]
+        v = sub[np.triu_indices(len(members), k=1)]
+        v = v[np.isfinite(v)]
+        return float(np.median(v)) if v.size else np.nan
+
+    all_z = Z[np.triu_indices(n, k=1)]
+    all_z = all_z[np.isfinite(all_z)]
+    background = float(np.median(all_z)) if all_z.size else np.nan
+
+    rows = []
+    for g in groups:
+        members = np.array([idx[x] for x in g["genes"] if x in idx], dtype=int)
+        obs = median_within(members)
+        null = np.array([median_within(draw(members)) for _ in range(n_perm)], dtype=float)
+        null = null[np.isfinite(null)]
+        if null.size and np.isfinite(obs):
+            p_upper = float((np.sum(null >= obs) + 1) / (null.size + 1))
+            sd = null.std(ddof=1)
+            ses = float((obs - null.mean()) / sd) if sd > 0 else np.nan
+        else:
+            p_upper, ses = np.nan, np.nan
+        rows.append({"column": g["column"], "group": g["group"], "programme": g["programme"],
+                     "n_genes": len(members), "n_pairs": len(members) * (len(members) - 1) // 2,
+                     "median_detections": (float(np.median(np.asarray(gene_weights)[members]))
+                                           if matched else np.nan),
+                     "median_z": obs, "null_median_z": float(null.mean()) if null.size else np.nan,
+                     "ses": ses, "p_upper": p_upper, "background_median_z": background,
+                     "abundance_matched": matched, "n_perm": int(null.size)})
+    out = pd.DataFrame(rows)
+    if len(out):
+        out["q_upper"] = bh_fdr(out["p_upper"].values)
+        out["p_upper_star"] = out["p_upper"].apply(p_val_to_star)
+        out["q_upper_star"] = out["q_upper"].apply(p_val_to_star)
+    return out.sort_values("median_z", ascending=False).reset_index(drop=True)
 
 
 # ==================================================================================================
