@@ -90,6 +90,9 @@ def gene_set_for(set_name, sample, transcripts=None):
     set0 is data-dependent (abundance matching), so it is resolved here and the resulting list is
     persisted to preflight/set0_genes.csv -- the choice must be auditable and stable across
     reruns, and both samples must use the SAME list or the WT/AD comparison is not a comparison.
+
+    That file is written by A3_preflight.ipynb on the LOCAL machine and must be copied here before
+    the array is submitted; it is the only input this script needs that is not git-tracked.
     """
     if set_name == "set1":
         return list(C.SYN_GENES)
@@ -101,11 +104,12 @@ def gene_set_for(set_name, sample, transcripts=None):
         if not path.exists():
             # Deliberately fail rather than generate it here: tasks 0 and 1 run concurrently and
             # would race on the same file, and the AD task would have to load the WT transcript
-            # table to select. A3a section 1 writes it -- that is why it must run first.
+            # table to select. A3_preflight.ipynb writes it -- that is why it must run first.
             raise SystemExit(
-                f"{path} is missing. Run A3a_three_sets.ipynb section 1 (RUN_PREFLIGHT) before "
-                "submitting the array -- it selects Set 0's abundance-matched genes on WT and "
-                "the same list is reused for AD.")
+                f"{path} is missing. Run A3_preflight.ipynb (locally) and copy its "
+                "output/preflight/set0_genes.csv here before submitting the array -- it selects "
+                "Set 0's abundance-matched genes on WT and the same list is reused for AD. "
+                "See README.md, runbook steps 1-2.")
         sel = pd.read_csv(path)
         return sel["set0_gene"].dropna().unique().tolist()
     raise ValueError(f"unknown set: {set_name}")

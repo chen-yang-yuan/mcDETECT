@@ -214,7 +214,9 @@ ambient_controls/
 │                              a "# from code/3_detection.py:55" provenance comment
 ├── a3_common.py               ported computation; vectorised primitives with named sources
 ├── run_detection_sets.py      [HGCC, SLURM array] Sets 0 / 1 / 3 (6 tasks)
-├── A3a_three_sets.ipynb       [local] preflight, NC forensics, funnels, overlap, stage D
+├── A3_preflight.ipynb         [local, BEFORE the array] CSR table, Set-0 gene list, Set-2
+│                              diagnostics, z profile
+├── A3a_three_sets.ipynb       [local] NC forensics, funnels, overlap, density, stage D
 ├── A3b_vicinity.ipynb         [local] the vicinity pseudo-granule control
 ├── A3c_de_baseline.ipynb      [local] the somatic-vs-non-somatic DE baseline
 ├── A3_figures.R               all figures, sections numbered 1:1 to the notebooks
@@ -268,22 +270,34 @@ aggregates. That is why every set is reported as a **funnel** (raw → size → 
 marker funnel printed beside it: if Set 3 is already near-empty *before* the in-soma filter, that is
 a result; if it only empties at that step, it is circular.
 
+**The abundance match holds only below ~700K transcripts, so Set 0's primary statistic is the
+per-million-transcript rate, not the sphere count.** The panel has no unannotated gene more
+abundant than that, so the eight rarest markers match within ~2 % while the seven most abundant
+are matched several-fold low — worst `Camk2a` 6,237,713 vs `Zbtb20` 266,796 (23×), and in aggregate
+33.3 M marker transcripts against 9.7 M for Set 0 (3.4×). Comparing raw counts would hand back
+precisely the abundance objection Set 0 exists to remove; the rate (`rate_<stage>_per_Mtx` in
+`a3a/funnel_by_gene.csv`) does not. `A3_preflight.ipynb` prints the match quality and
+`preflight/set0_genes.csv` records it per marker.
+
 ---
 
 ## A3a — `A3a_three_sets.ipynb`
 
+Sections are numbered from **2**, because §1 is the pre-flight and lives in
+`A3_preflight.ipynb`. The numbering is global across the A3 notebooks and maps 1:1 onto
+`A3_figures.R`'s sections.
+
 | § | what |
 |---|---|
-| 1 | **pre-flight — run before the HGCC array.** CSR table, Set-0 gene selection (`set0_genes.csv`, read by the detection script), Set-2 diagnostics, z-plane profile |
 | 2 | NC-filter forensics: one-geometry `nc_ratio`, per-NC-gene leave-one-out, the Gria2 partition, and (§2d) the gap + the 19-marker sensitivity |
 | 3 | set inventory and funnels, as counts and as per-million-transcript rates |
 | 4 | the overlap ladder — Set1∩Set3 and Set2∩Set3, plus merge-invariant transcript-level overlap |
 | 5 | per-region density per set, WT vs AD, with the per-region capture-ratio spread |
 | 6 | the locally-adaptive threshold re-test |
-| 7 | correctness gates (`VALIDATE`, off by default) |
+| 7 | correctness gates (`VALIDATE`, **on** by default) |
 
-**This is a run-twice notebook**, like `A2a_multigene.ipynb`: §1 must run *before* the array (it
-writes the Set-0 gene list); §2 onward need the array's output.
+Runs **once, top to bottom, with nothing to adjust** — everything it needs is on disk by the time
+it starts. Requires the `mcDETECT-env` kernel: §7's gate (b) imports `mcDETECT`.
 
 ### The overlap criterion
 
@@ -420,43 +434,80 @@ The Subdomain 1 vs 2 arm **already exists** in
 
 ---
 
-## Run order
+## Runbook
+
+**Six steps, each run exactly once. No parameter is adjusted at any point** — every notebook's
+defaults produce the final tables. Run all notebooks from `R2_revision/ambient_controls/` on the
+`mcDETECT-env` kernel (A3a §7 imports `mcDETECT`).
+
+| # | step | where | needs | produces |
+|---|---|---|---|---|
+| 1 | `A3_preflight.ipynb`, top to bottom | local | nothing | `output/preflight/` |
+| 2 | upload `set0_genes.csv` | local → HGCC | 1 | the array's only non-tracked input |
+| 3 | the detection array | HGCC | 2 | `output/detect/` |
+| 4 | download `output/detect/` | HGCC → local | 3 | the four sets on disk locally |
+| 5 | `A3c` → `A3b` → `A3a`, each top to bottom | local | 4 | `output/a3{a,b,c}/` |
+| 6 | `Rscript A3_figures.R` | local | 5 | `output/figures/` |
 
 ```bash
 cd R2_revision/ambient_controls
+HGCC=hgcc:~/hulab/projects/mcDETECT/R2_revision/ambient_controls    # as in slurm/run_detection.sh
 
-# 1. Pre-flight, LOCAL. Run A3a section 1 only -- it writes preflight/set0_genes.csv, which the
-#    detection script reads, and the CSR table that backs the alpha = 0.5 disclosure.
-jupyter lab A3a_three_sets.ipynb          # RUN_PREFLIGHT = True, stop after section 1
+# ---- 1. pre-flight, LOCAL. Writes the Set-0 gene list the detection script reads. ----
+jupyter lab A3_preflight.ipynb
 
-# 2. Detection, HGCC. 3 sets x 2 samples = 6 tasks. Cheap sets first (indices 0-3) so the path is
-#    validated before set1's two 200G jobs.
-sbatch --array=0-3 slurm/run_detection.sh     # set0, set3   -- both samples, cheap
-sbatch --array=4-5 slurm/run_detection.sh     # set1         -- both samples, 200G each
-#    or all at once:   bash slurm/submit.sh 4
+# ---- 2. upload it. This is the ONLY file the array needs that git does not carry. ----
+ssh hgcc "mkdir -p ~/hulab/projects/mcDETECT/R2_revision/ambient_controls/output/preflight"
+scp output/preflight/set0_genes.csv "$HGCC/output/preflight/"
 
-# 3. Local analysis. A3c and A3b section 6 need NOTHING from step 2 and can run in parallel with it.
-jupyter lab A3c_de_baseline.ipynb
-jupyter lab A3b_vicinity.ipynb            # sections 1-5 need the sphere_dict from step 2
-jupyter lab A3a_three_sets.ipynb          # sections 2-6
+# ---- 3. detection, HGCC. 3 sets x 2 samples = 6 tasks. ----
+#    0-1 set0 WT/AD  |  2-3 set3 WT/AD  |  4-5 set1 WT/AD   (python3 run_detection_sets.py --list)
+#    Cheap sets first, so the whole path is validated before set1's two 200G jobs.
+sbatch --array=0-3 slurm/run_detection.sh
+sbatch --array=4-5 slurm/run_detection.sh
+#    or all at once, 4 concurrent:   bash slurm/submit.sh 4
+#    Finished tasks are skipped on resubmit, so failures can be rerun by id: --array=2,5
 
-# 4. Figures.
+# ---- 4. download the results. ----
+rsync -av "$HGCC/output/detect/" output/detect/
+#    Expect 6 directories, each with spheres.parquet, sphere_dict.parquet, funnel_by_gene.csv,
+#    run_info.csv (+ status.csv if a zero-count gene was dropped). A few hundred MB, dominated by
+#    set1_*/sphere_dict.parquet (the unfiltered pre-merge pass).
+
+# ---- 5. local analysis, in this order. ----
+jupyter lab A3c_de_baseline.ipynb    # needs nothing from step 4; its section 1 caches the
+                                     # transcript partition that A3a section 6 reuses
+jupyter lab A3b_vicinity.ipynb       # sections 1-5 need set1_*/sphere_dict.parquet
+jupyter lab A3a_three_sets.ipynb
+
+# ---- 6. figures. Every section degrades to "[skip]" on a missing input, so this is safe
+#         to run at any point. ----
 Rscript A3_figures.R
 ```
 
+**A partial download fails quietly.** Every set-dependent cell prints `[skip] ... missing` rather
+than raising, so check `output/a3a/set_inventory.csv` has **4 sets x 2 samples = 8 rows** before
+trusting §4-§6. `A3c` and `A3b` §6 need nothing from HGCC and can run while the array is still
+queued.
+
 ### Toggles
 
-| notebook | toggle | effect |
-|---|---|---|
-| all | `VALIDATE` | correctness gates; off by default |
-| A3a | `RUN_PREFLIGHT` | §1 — **must** be True on the first pass |
-| A3a | `RUN_LEAVE_ONE_OUT` | §2 — one KD-tree per NC gene |
-| A3b | `MAX_GRANULES` | subsample; `None` for the final tables |
-| A3b | `RUN_PREDICATE` | §4–5, the slow and load-bearing step |
-| A3b | `RUN_ROUGH_VARIANT` | §6 — needs no HPC output |
-| A3c | `RUN_CLIP_BIAS` | §2 — needs `spot_embedding` |
-| A3c | `RUN_COUNT_MODEL` | §4 — the non-compositional primary |
-| `A3_figures.R` | `RUN_*` | one per section, numbered to the notebooks |
+Defaults are the final configuration; these exist for debugging, not for the normal run.
+
+| notebook | toggle | default | effect |
+|---|---|---|---|
+| A3a, A3b, A3c | `VALIDATE` | **`True`** | correctness gates. On by default here, unlike A1/A2: the gates are the last section, so every table is already written when they run, and they are what catches a bad run |
+| A3a, A3b | `DRY_RUN` | `False` | `True` subsamples (`MAX_SPHERES` / `MAX_GRANULES` = 200K) for a cheap smoke pass over every cell. **The tables a dry run writes are not final** |
+| A3a | `RUN_LEAVE_ONE_OUT` | `True` | §2b — one KD-tree per NC gene |
+| A3b | `RUN_PREDICATE` | `True` | §4-5, the slow and load-bearing step |
+| A3b | `RUN_ROUGH_VARIANT` | `True` | §6 — needs no HPC output |
+| A3c | `OVERWRITE` | `False` | `True` recomputes the cached transcript partition |
+| A3c | `RUN_CLIP_BIAS` | `True` | §2 — needs `spot_embedding` |
+| A3c | `RUN_COUNT_MODEL` | `True` | §4 — the non-compositional primary |
+| A3c | `RUN_AXIS2` | `True` | §5 — WT/AD on the three layers |
+| `A3_figures.R` | `RUN_*` | `TRUE` | one per section, numbered to the notebooks |
+
+`A3_preflight.ipynb` has no toggles at all.
 
 ### Tables that are deliberately not plotted
 
@@ -482,7 +533,8 @@ Note detection now runs DBSCAN with the size/in-soma filters **off** and applies
 afterwards: identical merged output (verified to 1e-12; `miniball` is randomised, so mcDETECT's own
 fine pass is not bitwise reproducible either), but it also yields the real `raw → size → in-soma`
 funnel, which a filtered `sphere_dict` cannot. `set0`/`set3` (Set 3 seeds on ~2.9 M NC transcripts against Set 1's 33.3 M). Locally, A3b §4 is the
-slow step — one DBSCAN per pseudo-granule — which is what `MAX_GRANULES` is for. A3c §1's partition
+slow step — one core-point test per pseudo-granule — which is what `DRY_RUN` exists to shorten
+while debugging; the final run must have it `False`. A3c §1's partition
 is one batched ball query over ~10⁸ transcripts per sample and is cached to `partition_counts.csv`.
 
 ---
@@ -535,6 +587,10 @@ is one batched ball query over ~10⁸ transcripts per sample and is cached to `p
   carries its own assumptions.
 - **The three-set design cannot prove ambient is unstructured** — only that structured ambient does
   not produce granule-shaped, marker-enriched, non-overlapping aggregates at these thresholds.
+- **Set 0 is not abundance-matched at the top of the range.** The panel runs out of unannotated
+  genes above ~700 K transcripts, so for the seven most abundant markers Set 0 is 5–23× rarer (see
+  *The sets*). The per-million-transcript rate is what makes the comparison valid there; a raw
+  count comparison would not be.
 
 ### Known issue, flagged and NOT investigated here
 
