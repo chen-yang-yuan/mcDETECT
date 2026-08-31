@@ -672,19 +672,29 @@ PSEUDO_EXCLUDED_LABELS = ["excluded_thin_pool", "excluded_contaminated"]
 # so a pseudo-granule whose contents were entirely replaced can still be credited to a neighbour.
 #
 # MEASURED, by matching the published granules against themselves -- every granule matches itself,
-# so a count > 1 means a DIFFERENT granule also satisfies the rule, i.e. the rate at which a
-# destroyed pseudo-granule would be scored re-detected for free:
+# so a credit from any OTHER sphere is a free credit, i.e. the rate at which a destroyed
+# pseudo-granule would be scored re-detected anyway:
 #
-#       criterion      WT       AD
-#       center_in     6.93%    8.20%     <- unusable as the primary
-#       intersect    33.91%   38.98%     <- barely an identity statement at all
-#       merge         0.34%    0.65%
+#       criterion                              WT       AD
+#       center_in                             6.93%    8.20%   <- unusable as the primary
+#       intersect                            33.91%   38.98%   <- barely an identity statement
+#       merge                                 0.34%    0.65%
+#       provenance, >=50% of own transcripts   5.98%    7.82%   <- NOT enough on its own
+#       provenance, >=50% AND plurality        0.25%    0.28%   <- the primary
 #
-# So the primary is PROVENANCE: a granule counts as re-detected when the re-run produced a sphere
-# containing at least PSEUDO_PROVENANCE_FRAC of THAT GRANULE'S OWN transcripts -- the granule-layer
-# transcripts assigned to it by a3_common.granule_members. Neighbour bleed goes to essentially zero
-# because the credit follows the actual molecules, and it states plainly in the response: the
-# detector rebuilt a sphere on the same transcripts.
+# So the primary is PROVENANCE, and it takes BOTH conditions. A granule counts as re-detected when
+# the re-run produced a sphere that
+#     (i)  contains at least PSEUDO_PROVENANCE_FRAC of THAT GRANULE'S OWN transcripts -- the
+#          granule-layer transcripts assigned to it by a3_common.granule_members -- and
+#     (ii) contains more of that granule's transcripts than of any other granule's.
+#
+# Condition (i) alone was expected to be enough and IS NOT: published granules overlap so heavily
+# that a neighbour's sphere clears it for 6-8% of granules, no better than center_in. Condition
+# (ii) -- one sphere is one object, credited to the granule it is most made of -- is what makes it
+# specific, and it costs nothing in sensitivity: a granule is credited by its own sphere 100.000%
+# of the time at every threshold from 0.5 to 1.0.
+#
+# It also states plainly in the response: the detector rebuilt a sphere on the same transcripts.
 #
 # The three geometric rungs are mcDETECT's own predicates and are still scored and reported beside
 # it, so the answer can be read under every definition and cannot be an artefact of ours. The floor
@@ -694,9 +704,9 @@ PSEUDO_MATCH_GEOMETRIC = ["center_in", "intersect", "merge"]
 PSEUDO_MATCH_CRITERIA = ["provenance"] + PSEUDO_MATCH_GEOMETRIC
 PSEUDO_MATCH_PRIMARY = "provenance"
 
-# Half of a granule's own transcripts. A recall statement about the object, not a threshold tuned
-# to a result: below 0.5 a sphere could be credited with two different granules at once, and at 0.5
-# it cannot.
+# Half of a granule's own transcripts. Not tuned to a result: the plurality condition is what
+# carries the specificity, and raising this to 0.9 only moves the floor from 0.25% to 0.03% while
+# risking an understatement of the `scramble` arm, whose spheres legitimately shift.
 PSEUDO_PROVENANCE_FRAC = 0.5
 
 # THE LOAD-BEARING GATE. If the untouched arm is not re-detected at essentially 100%, no other

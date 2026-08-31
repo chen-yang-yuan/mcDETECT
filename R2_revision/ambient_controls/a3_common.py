@@ -1300,8 +1300,19 @@ def provenance_match(new_spheres, points, owner, k_of, frac=None, buffer=None, z
     """Which published granules did the re-run rebuild a sphere ON TOP OF?
 
     The identity criterion, and the primary one. A granule G counts as re-detected when some sphere
-    of `new_spheres` contains at least `frac` of G's OWN transcripts -- `owner` says which granule
-    each point of `points` belongs to, `k_of[G]` how many G has.
+    of `new_spheres`
+
+        (i)  contains at least `frac` of G's OWN transcripts, and
+        (ii) contains more of G's transcripts than of any other granule's.
+
+    `owner` says which granule each point of `points` belongs to, `k_of[G]` how many G has.
+
+    CONDITION (ii) IS NOT COSMETIC. Published granules overlap heavily, so (i) alone is barely
+    better than geometry: measured by matching the published set against itself, a sphere other
+    than G's own clears (i) for 6.0% (WT) / 7.8% (AD) of granules, against `center_in`'s 6.9% /
+    8.2%. Adding (ii) -- one sphere is one object, credited to the granule it is most made of --
+    takes that to 0.25% / 0.28%, below even `merge`'s 0.34% / 0.65%, while a granule is still
+    credited by its own sphere 100.000% of the time at every threshold tried.
 
     WHY NOT GEOMETRY. `match_spheres`' rungs ask only whether a new sphere sits where G sat. They
     cannot tell "the detector called this object again" from "the detector called something else
@@ -1317,9 +1328,11 @@ def provenance_match(new_spheres, points, owner, k_of, frac=None, buffer=None, z
     Returns a frame indexed like `k_of` with `hit_provenance`, `best_recall` (the largest share of
     G's transcripts any single sphere managed, so a near miss is visible rather than a bare False)
     `scorable` (False where G has no transcripts to rebuild on -- those are never scored, and never
-    silently divided by), and `n_crediting`, the number of spheres that cleared the threshold for
-    G; self-matching the published set against itself turns that into the criterion's false-credit
-    floor, directly comparable with the geometric ones.
+    silently divided by), and `n_crediting`, the number of spheres clearing BOTH conditions for G;
+    self-matching the published set against itself turns that into the criterion's false-credit
+    floor, directly comparable with the geometric ones. Note `best_recall` is taken over ALL
+    spheres, so a granule with high recall but `hit_provenance` False is one whose transcripts sit
+    in a sphere that belongs more to a neighbour.
     """
     frac = C.PSEUDO_PROVENANCE_FRAC if frac is None else float(frac)
     buffer = C.KG_BUFFER if buffer is None else buffer
@@ -1346,15 +1359,24 @@ def provenance_match(new_spheres, points, owner, k_of, frac=None, buffer=None, z
             # largest count each granule achieved in any single sphere
             key = sph * n_gran + owner[flat]
             uniq, cnt = np.unique(key, return_counts=True)
-            own_of = uniq % n_gran
+            own_of, sph_of = uniq % n_gran, uniq // n_gran
             np.maximum.at(best, own_of, cnt)
-            np.add.at(n_credit, own_of[cnt >= need[own_of]], 1)
+            # EXCLUSIVITY: one sphere is one object, so it is credited to the granule it is most
+            # made of. Highest count wins, ties by lowest granule index -- deterministic. This is
+            # what makes the criterion specific: without it a neighbour's sphere credits 6.0% (WT)
+            # / 7.8% (AD) of granules for free; with it, 0.25% / 0.28%.
+            o = np.lexsort((own_of, -cnt, sph_of))
+            firstm = np.ones(len(o), bool)
+            firstm[1:] = sph_of[o][1:] != sph_of[o][:-1]
+            plural = np.zeros(len(uniq), bool)
+            plural[o[firstm]] = True
+            np.add.at(n_credit, own_of[plural & (cnt >= need[own_of])], 1)
             if verbose and (lo // chunk) % 10 == 0:
                 print(f"    spheres {hi:,}/{len(cen):,}", flush=True)
 
     scorable = k_of > 0
     return pd.DataFrame(dict(
-        hit_provenance=scorable & (best >= need),
+        hit_provenance=scorable & (n_credit > 0),
         best_recall=np.divide(best, k_of, out=np.zeros(n_gran, float), where=scorable),
         n_own_found=best, n_own=k_of, scorable=scorable,
         # >1 means more than one sphere holds half of G -- the self-match of the published set
