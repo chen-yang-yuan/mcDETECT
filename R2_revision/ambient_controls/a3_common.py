@@ -14,16 +14,21 @@ Contents
   io / setup            write_parquet_atomic, load_transcripts, load_nc_genes, load_genes,
                         load_panel, select_set0
   CSR threshold         tissue_area, csr_min_samples, csr_table
-  sphere geometry       sphere_overlap, overlap_pairs, jaccard_balls
+  sphere geometry       sphere_overlap, overlap_pairs
   profiling             profile_spheres (thin wrapper over A1's), funnel_counts
-  NC filter forensics   nc_ratio_corrected, nc_leave_one_out, gria2_partition
                         (note the two-list NC policy: new detections use 18 genes, reused
                          published data keeps 19 -- see a3_config.SET3_EXCLUDE)
-  stage D               local_lambda_grid, adaptive_min_samples, adaptive_survival
+  grids                 _grid_edges
   A3b                   tissue_mask, in_tissue, density_quintiles, place_vicinity_spheres,
                         dbscan_core_predicate
-  A3c                   partition_transcripts, composition_logfc, axis1_table
-  reporting             record_distribution, bonferroni, bh_fdr, p_val_to_star, write_run_info
+  A3c                   partition_transcripts, composition_logfc, axis1_table,
+                        neutral_genes, fit_layer_count_model
+  A3d                   grid_origin, grid_bin_id, bin_transcripts, local_null_matrices,
+                        local_null_moments, local_null_permutation_check
+  A3e                   sample_pseudo_arms, granule_members, local_pool_sizes,
+                        draw_local_ambient, apply_relabel_patch, provenance_match,
+                        match_spheres
+  reporting             record_distribution, bh_fdr, p_val_to_star, write_run_info
 """
 
 import os
@@ -96,6 +101,84 @@ def load_nc_genes(sample="WT", exclude=None):
 
 def load_panel(sample="WT"):
     return pd.read_csv(C.panel_path(sample))
+
+
+def neutral_genes(sample="WT"):
+    """The panel genes that took NO part in defining or filtering a granule.
+
+    Two groups did: C.SYN_GENES seeded the DBSCAN pass that created every sphere, and the
+    published 19-gene NC list was used by nc_filter to delete spheres. Gria2 is on both, so 38
+    genes come out of the 290-gene panel and 252 remain.
+
+    These are the genes A3c section 5 tests on, and -- equally important -- the gene set over
+    which its composition is computed. Including the seed genes in the denominator would deflate
+    every other gene's granule share by a constant (the markers are ~31% of transcripts and are
+    concentrated in granules by construction), which moves the neutral point away from zero and
+    reduces the analysis to a statement about relative ordering. Computed over this set, zero
+    means "the same share of granule RNA as of the surrounding RNA", which is the quantity the
+    reviewer's question is actually about.
+    """
+    panel = set(load_genes(sample))
+    excluded = set(C.SYN_GENES) | set(load_nc_genes(sample))
+    return sorted(panel - excluded)
+
+
+def fit_layer_count_model(spot_counts, genes, layers=("granule", "residual_extrasomatic"),
+                          samples=None, verbose=True):
+    """Quasi-Poisson per gene: layers[0] vs layers[1], across spots, with an exposure offset.
+
+    `genes` fixes BOTH which genes are fitted and which genes the per-spot layer totals are summed
+    over -- the offset is the total of `genes` in that layer at that spot, so the coefficient is a
+    share-ratio within exactly that pool. See neutral_genes() for why the pool matters.
+
+    Spots are dropped unless both layers have a non-zero total: a spot with no exposure carries no
+    information about a rate, and flooring the offset at log(1) against a median exposure of ~200
+    fabricates data.
+    """
+    import statsmodels.api as sm
+
+    gene_set = set(genes)
+    marker_set = set(C.SYN_GENES)
+    samples = list(C.SAMPLES if samples is None else samples)
+    rows = []
+    for sample in samples:
+        sc_s = spot_counts[spot_counts["sample"] == sample]
+        two = sc_s[sc_s["layer"].isin(layers) & sc_s["gene"].isin(gene_set)]
+        tot = (two.groupby(["spot", "layer"], observed=True)["n"].sum().unstack(fill_value=0))
+        for lay in layers:
+            if lay not in tot.columns:
+                tot[lay] = 0
+        keep = (tot[layers[0]] > 0) & (tot[layers[1]] > 0)
+        if verbose:
+            print(f"[{sample}] spots with non-zero exposure in both layers: "
+                  f"{int(keep.sum()):,}/{len(tot):,}", flush=True)
+        tot = tot[keep]
+        two = two[two["spot"].isin(tot.index)]
+        off = np.log(np.concatenate([tot[layers[0]].to_numpy(),
+                                     tot[layers[1]].to_numpy()]).astype(float))
+        ind = np.concatenate([np.ones(len(tot)), np.zeros(len(tot))])
+        X = sm.add_constant(ind, has_constant="add")
+        for gene, sub in two.groupby("gene", observed=True):
+            w = sub.pivot_table(index="spot", columns="layer", values="n",
+                                fill_value=0, observed=True).reindex(tot.index, fill_value=0)
+            y = np.concatenate([w.get(layers[0], pd.Series(0, index=tot.index)).to_numpy(),
+                                w.get(layers[1], pd.Series(0, index=tot.index)).to_numpy()]
+                               ).astype(float)
+            base = dict(sample=sample, gene=gene, n_spots=len(tot),
+                        is_marker=gene in marker_set)
+            try:
+                fit = sm.GLM(y, X, family=sm.families.Poisson(), offset=off).fit(scale="X2")
+                assert fit.df_resid > 0, "saturated model -- inference would be meaningless"
+                rows.append(dict(base, df_resid=float(fit.df_resid),
+                                 logFC_granule_vs_residual=float(fit.params[1]) / np.log(2),
+                                 se=float(fit.bse[1]), pval=float(fit.pvalues[1]),
+                                 dispersion=float(fit.scale)))
+            except Exception as e:
+                rows.append(dict(base, df_resid=np.nan, logFC_granule_vs_residual=np.nan,
+                                 se=np.nan, pval=np.nan, dispersion=np.nan, error=str(e)[:80]))
+    out = pd.DataFrame(rows)
+    out["fdr"] = bh_fdr(out["pval"])
+    return out
 
 
 def select_set0(sample="WT", transcripts=None, n=None, verbose=True):
@@ -213,31 +296,6 @@ def csr_table(sample, transcripts=None, genes=None, alphas=None, verbose=True):
 # ============================================================ sphere geometry ============================================================ #
 
 
-def jaccard_balls(d, r_a, r_b):
-    """Volumetric Jaccard of two balls, closed form (spherical lens).
-
-    Reported as a full distribution rather than a cutoff, so the overlap ladder does not rest on
-    one arbitrary threshold.
-    """
-    d, r_a, r_b = (np.atleast_1d(np.asarray(v, dtype=float)) for v in (d, r_a, r_b))
-    d, r_a, r_b = np.broadcast_arrays(d, r_a, r_b)
-    d = d.copy()
-    v_a, v_b = 4 / 3 * np.pi * r_a ** 3, 4 / 3 * np.pi * r_b ** 3
-    inter = np.zeros_like(d)
-    contained = d <= np.abs(r_a - r_b)
-    inter[contained] = np.minimum(v_a, v_b)[contained]
-    lens = (~contained) & (d < r_a + r_b) & (d > 0)
-    if lens.any():
-        dl, ra, rb = d[lens], r_a[lens], r_b[lens]
-        inter[lens] = (np.pi * (ra + rb - dl) ** 2
-                       * (dl ** 2 + 2 * dl * rb - 3 * rb ** 2 + 2 * dl * ra + 6 * ra * rb
-                          - 3 * ra ** 2) / (12 * dl))
-    union = v_a + v_b - inter
-    out = np.zeros_like(union)
-    np.divide(inter, union, out=out, where=union > 0)
-    return out
-
-
 def sphere_overlap(d, r_a, r_b, criterion="intersect", rho=None, l=None):
     """Boolean overlap under one criterion of the ladder.
 
@@ -263,43 +321,55 @@ def sphere_overlap(d, r_a, r_b, criterion="intersect", rho=None, l=None):
 
 
 def overlap_pairs(a, b, criterion="intersect", z_col=None, max_r=None, chunk=200_000):
-    """Which spheres of `a` overlap any sphere of `b`, under one criterion.
+    """Which spheres of `a` overlap any sphere of `b`.
 
     Both frames need sphere_x, sphere_y, <z_col>, sphere_r. Uses a cKDTree ball query at
     r_a + max(r_b) so the candidate set is a superset, then applies the exact criterion.
+
+    `criterion` may be a single name or a LIST of names. The candidate query is by far the
+    expensive part and does not depend on the criterion, so passing the whole ladder at once
+    costs one pass instead of three. A3a scores 2 controls x 2 granule sets x 3 rungs x 20 null
+    re-placements per sample; without this the query is issued 3x more often than it needs to be.
 
     z_col defaults to C.OVERLAP_Z_COL. NOTE the inconsistency inherited from the package:
     dbscan / _remove_overlaps use `sphere_z`, while nc_filter and profile use `layer_z`. One
     column is chosen here and applied identically to every set; disclose it.
 
-    Returns (mask over `a`, count of `b`-overlaps per row of `a`).
+    Returns (mask over `a`, count of `b`-overlaps per row of `a`) for a single criterion, or
+    {criterion: (mask, counts)} when a list is passed.
     """
     z_col = z_col or C.OVERLAP_Z_COL
-    if len(a) == 0 or len(b) == 0:
-        return np.zeros(len(a), dtype=bool), np.zeros(len(a), dtype=int)
-    pb = b[["sphere_x", "sphere_y", z_col]].to_numpy(dtype=float)
-    rb = b["sphere_r"].to_numpy(dtype=float)
-    tree = cKDTree(pb)
-    pa = a[["sphere_x", "sphere_y", z_col]].to_numpy(dtype=float)
-    ra = a["sphere_r"].to_numpy(dtype=float)
-    max_r = float(rb.max()) if max_r is None else max_r
+    crits = [criterion] if isinstance(criterion, str) else list(criterion)
+    counts = {c: np.zeros(len(a), dtype=int) for c in crits}
 
-    # One batched query for the candidate supersets, then the exact criterion vectorised over
-    # the flattened pairs. The per-row loop this replaces issued ~1.7e8 scalar queries in A3a
-    # section 4 and would not have finished.
-    counts = np.zeros(len(a), dtype=int)
-    for lo in range(0, len(pa), chunk):
-        hi = min(lo + chunk, len(pa))
-        cand = tree.query_ball_point(pa[lo:hi], ra[lo:hi] + max_r, workers=-1)
-        n_per = np.fromiter((len(c) for c in cand), dtype=np.int64, count=hi - lo)
-        if n_per.sum() == 0:
-            continue
-        flat = np.fromiter((j for c in cand for j in c), dtype=np.int64, count=int(n_per.sum()))
-        owner = np.repeat(np.arange(lo, hi), n_per)
-        d = np.linalg.norm(pb[flat] - pa[owner], axis=1)
-        hit = sphere_overlap(d, ra[owner], rb[flat], criterion)
-        np.add.at(counts, owner[hit], 1)
-    return counts > 0, counts
+    if len(a) and len(b):
+        pb = b[["sphere_x", "sphere_y", z_col]].to_numpy(dtype=float)
+        rb = b["sphere_r"].to_numpy(dtype=float)
+        tree = cKDTree(pb)
+        pa = a[["sphere_x", "sphere_y", z_col]].to_numpy(dtype=float)
+        ra = a["sphere_r"].to_numpy(dtype=float)
+        max_r = float(rb.max()) if max_r is None else max_r
+
+        # One batched query for the candidate supersets, then each criterion vectorised over the
+        # flattened pairs. The per-row loop this replaces issued ~1.7e8 scalar queries in A3a's
+        # overlap section and would not have finished.
+        for lo in range(0, len(pa), chunk):
+            hi = min(lo + chunk, len(pa))
+            cand = tree.query_ball_point(pa[lo:hi], ra[lo:hi] + max_r, workers=-1)
+            n_per = np.fromiter((len(c) for c in cand), dtype=np.int64, count=hi - lo)
+            if n_per.sum() == 0:
+                continue
+            flat = np.fromiter((j for c in cand for j in c), dtype=np.int64,
+                               count=int(n_per.sum()))
+            owner = np.repeat(np.arange(lo, hi), n_per)
+            d = np.linalg.norm(pb[flat] - pa[owner], axis=1)
+            for c in crits:
+                hit = sphere_overlap(d, ra[owner], rb[flat], c)
+                np.add.at(counts[c], owner[hit], 1)
+
+    if isinstance(criterion, str):
+        return counts[criterion] > 0, counts[criterion]
+    return {c: (counts[c] > 0, counts[c]) for c in crits}
 
 
 # ============================================================ profiling ============================================================ #
@@ -327,6 +397,9 @@ def profile_spheres(spheres, sample=None, transcripts=None, genes=None, marker_g
         genes = load_genes(sample or "WT")
     if marker_genes is None:
         marker_genes = C.SYN_GENES          # a3_config's copy, not postproc_config's second one
+    # sphere_r is a minimum-enclosing radius; see partition_transcripts' BUFFER note. The
+    # delegate defaults to 0.0 so A1's cached feature tables stay byte-identical -- A3 opts in.
+    kwargs.setdefault("buffer", C.KG_BUFFER)
     return sf.profile_spheres(spheres, sample=sample, transcripts=transcripts, genes=genes,
                               marker_genes=marker_genes, nc_genes=nc_genes, **kwargs)
 
@@ -345,12 +418,19 @@ def _import_sphere_features():
     return sf
 
 
-def funnel_counts(spheres_raw, size_thr=None, in_soma_thr=None, by=None):
+def funnel_counts(spheres_raw, size_thr=None, in_soma_thr=None, by=None, genes=None):
     """n surviving at each detection filter stage: raw -> size -> in_soma.
 
     Reported for EVERY set side by side. Set 3 shown only at the endpoint would be circular: NC
     genes are defined as nuclear-enriched, so if Set 3 empties ONLY at the in-soma step that
     proves nothing. If it is already near-empty at `raw`, that is a result.
+
+    `genes` -- the full list actually seeded, when `by` is a single column of gene names. A gene
+    that formed NO sphere at all never appears in `spheres_raw` (run_detection_sets.
+    flatten_sphere_dict skips empty per-gene frames), so without this it silently VANISHES from
+    the funnel instead of appearing as raw = 0. That is backwards: a zero is the strongest result
+    a negative-control set can produce, and it was the one row missing (Set 3 seeded 18 genes and
+    reported 16 in WT, 17 in AD -- C4a and Cyfip1 formed nothing anywhere).
     """
     size_thr = C.SIZE_THR if size_thr is None else size_thr
     in_soma_thr = C.IN_SOMA_THR if in_soma_thr is None else in_soma_thr
@@ -363,269 +443,36 @@ def funnel_counts(spheres_raw, size_thr=None, in_soma_thr=None, by=None):
         return dict(raw=n_raw, size=n_size, in_soma=n_in_soma)
 
     if by is None:
+        if genes is not None:
+            raise ValueError("genes= needs `by` to be the gene column")
         return pd.DataFrame([_count(spheres_raw)])
     rows = []
     for key, grp in spheres_raw.groupby(by, observed=True):
         row = {by: key} if isinstance(by, str) else dict(zip(by, key))
         row.update(_count(grp))
         rows.append(row)
-    return pd.DataFrame(rows)
-
-
-# ============================================================ NC filter forensics ============================================================ #
-
-def nc_ratio_corrected(spheres, transcripts, nc_genes, z_col="layer_z"):
-    """Recompute nc_ratio on ONE consistent geometry.
-
-    mcDETECT's nc_filter (model.py:393-413) computes the numerator on the sphere's FINAL geometry
-    (centre at layer_z, radius sphere_r) but divides by `size`, which _remove_overlaps never
-    recomputes -- it updates only sphere_x/y/z, layer_z and sphere_r. So for every merged granule
-    the ratio mixes a post-merge numerator with a pre-merge denominator, inflating nc_ratio
-    exactly for the multi-marker (most confidently real) granules. Merging frequency is
-    density-dependent, hence region- and condition-dependent.
-
-    Here both come from the same ball query. Returns a frame with the corrected ratio, the
-    published one, and whether the granule changes status at nc_thr.
-    """
-    nc = transcripts[transcripts["target"].isin(nc_genes)]
-    marker = transcripts[transcripts["target"].isin(C.SYN_GENES)]
-    centers = spheres[["sphere_x", "sphere_y", z_col]].to_numpy(dtype=float)
-    radii = spheres["sphere_r"].to_numpy(dtype=float)
-
-    def _counts(df):
-        if len(df) == 0:
-            return np.zeros(len(spheres), dtype=int)
-        tree = cKDTree(df[["global_x", "global_y", "global_z"]].to_numpy(dtype=float))
-        return np.asarray(tree.query_ball_point(centers, radii, workers=-1,
-                                                return_length=True), dtype=np.int64)
-
-    n_nc, n_marker = _counts(nc), _counts(marker)
-    corrected = np.where(n_marker > 0, n_nc / np.maximum(n_marker, 1), np.nan)
-    out = pd.DataFrame({
-        "n_nc_in_sphere": n_nc,
-        "n_marker_in_sphere": n_marker,
-        "nc_ratio_corrected": corrected,
-        "nc_ratio_published": spheres["nc_ratio"].to_numpy() if "nc_ratio" in spheres else np.nan,
-    })
-    keep_pub = (out["nc_ratio_published"] == 0) | (out["nc_ratio_published"] < C.NC_THR)
-    keep_cor = (out["n_nc_in_sphere"] == 0) | (out["nc_ratio_corrected"] < C.NC_THR)
-    out["status_changed"] = keep_pub.fillna(False) != keep_cor.fillna(False)
+    out = pd.DataFrame(rows, columns=[by, *C.FUNNEL_STAGES] if not rows else None)
+    if genes is None:
+        return out
+    if not isinstance(by, str):
+        raise ValueError("genes= needs `by` to be a single column name")
+    # reindex over what was SEEDED, not over what happened to produce a sphere; seeded order is
+    # preserved so the table reads the same way the run does.
+    out = (out.set_index(by).reindex(list(genes)).rename_axis(by)
+           .fillna(0).astype({stage: int for stage in C.FUNNEL_STAGES}).reset_index())
     return out
 
 
-def nc_leave_one_out(spheres_set1, transcripts, nc_genes=None, sample="WT",
-                     z_col="layer_z", gene_col="seed_gene"):
-    """How many Set-1 granules each NC gene removes ON ITS OWN.
-
-    The NC list is not gene-neutral -- it spans complement (C4a), AD-risk (Abca7), an
-    oligodendrocyte gene (Opalin) and three dentate-gyrus genes -- so its background is itself
-    spatially structured and plausibly condition-dependent, which is Reviewer #2's complaint
-    applied to our own filter. If one structured gene drives most of the filtering and is
-    elevated in AD, the published AD/WT granule difference is partly a filter artefact.
-
-    `nc_genes` defaults to the 18-gene list, because Set 1 is a NEWLY DETECTED population and the
-    provenance policy applies (a3_config.SET3_EXCLUDE). Pass the 19-gene list explicitly only to
-    ask what the PUBLISHED filter did.
-    """
-    if nc_genes is None:
-        nc_genes = load_nc_genes(sample, exclude=C.SET3_EXCLUDE)
-    centers = spheres_set1[["sphere_x", "sphere_y", z_col]].to_numpy(dtype=float)
-    radii = spheres_set1["sphere_r"].to_numpy(dtype=float)
-    # `size` and `gene` are the POST-merge columns and both are stale (_remove_overlaps updates
-    # only sphere_x/y/z, layer_z, sphere_r). That is deliberate here: this function reproduces
-    # what the PUBLISHED nc_filter did, stale denominator included, so its numbers are directly
-    # comparable to Set 2. Use nc_ratio_corrected() for the one-geometry version.
-    size = spheres_set1["size"].to_numpy(dtype=float)
-    seed = (spheres_set1[gene_col].to_numpy() if gene_col in spheres_set1
-            else spheres_set1["gene"].to_numpy() if "gene" in spheres_set1 else None)
-
-    rows = []
-    for g in nc_genes:
-        tx = transcripts[transcripts["target"] == g]
-        if len(tx) == 0:
-            rows.append(dict(nc_gene=g, n_tx=0, n_removed=0, n_removed_not_self_seeded=0))
-            continue
-        tree = cKDTree(tx[["global_x", "global_y", "global_z"]].to_numpy(dtype=float))
-        cnt = np.asarray(tree.query_ball_point(centers, radii, workers=-1,
-                                               return_length=True), dtype=np.int64)
-        ratio = np.where(size > 0, cnt / np.maximum(size, 1), 0.0)
-        removed = (cnt > 0) & (ratio >= C.NC_THR)
-        not_self = removed & (seed != g) if seed is not None else removed
-        rows.append(dict(nc_gene=g, n_tx=int(len(tx)), n_removed=int(removed.sum()),
-                         n_removed_not_self_seeded=int(not_self.sum())))
-    return pd.DataFrame(rows).sort_values("n_removed", ascending=False)
-
-
-def gria2_partition(set1, set2, gene_col="gene"):
-    """Split Set1 - Set2 into 'seeded on Gria2' vs 'dropped for nc_ratio >= thr', and give the
-    matched 19-marker sensitivity.
-
-    97.1% (WT) / 97.6% (AD) of published granules have nc_ratio EXACTLY 0, so this difference is
-    dominated by the Gria2 list collision and must be partitioned rather than reported as one
-    number. Frame Gria2 as a list inconsistency that makes Set 2 CONSERVATIVE -- Gria2 is a
-    canonical dendritically-transported transcript, and its presence on a nuclear-enrichment list
-    is a curation error, not evidence against granules.
-
-    Both sets seed on all 20 markers (a3_config: the SEED list is never modified, only the NC
-    list has two versions), which is what lets Set1 - Set2 isolate the NC filter -- see the
-    merge-confound note in a3_config beside SET3_EXCLUDE.
-
-    Columns
-    -------
-    n_removed_gria2   granules lost to the list collision. An UPPER BOUND on the gap left by
-                      keeping Set 2 on the 19-gene NC list: Set 1 applies no NC filter at all, so
-                      some of these would have been dropped by an 18-gene filter anyway.
-    n_removed_other   the NC filter's genuine effect.
-    *_ex_gria2        the free 19-marker sensitivity: Gria2-SEEDED rows stripped from BOTH sets,
-                      so the two rest on the same effective marker population.
-
-    NOTE both "invariants" this once claimed the notebooks assert --
-    `n_removed_gria2 + n_removed_other == n_removed` and
-    `n_removed_ex_gria2 == n_removed_other` -- are algebraic identities of these definitions and
-    can never fail. They are not checks. The gate that means something re-derives
-    `n_removed_other` from the nc_ratio predicate on Set 1 and compares.
-    """
-    for nm, frame in (("set1", set1), ("set2", set2)):
-        if gene_col not in frame.columns:
-            raise KeyError(f"{nm} has no '{gene_col}' column; pass gene_col='seed_gene' when "
-                           "using the pre-merge sphere_dict, or 'gene' for a merged table")
-    n1, n2 = len(set1), len(set2)
-    g1 = int((set1[gene_col] == C.GRIA2).sum())
-    g2 = int((set2[gene_col] == C.GRIA2).sum())
-    # matched 19-marker populations: pure table filtering, no re-detection
-    n1_ex, n2_ex = n1 - g1, n2 - g2
-    return pd.DataFrame([dict(
-        n_set1=n1, n_set2=n2, n_removed=n1 - n2,
-        n_gria2_set1=g1, n_gria2_set2=g2, n_removed_gria2=g1 - g2,
-        n_removed_other=(n1 - n2) - (g1 - g2),
-        frac_removed_gria2=(g1 - g2) / (n1 - n2) if n1 != n2 else np.nan,
-        # --- 19-marker sensitivity (Gria2-seeded rows dropped from both) ---
-        n_set1_ex_gria2=n1_ex, n_set2_ex_gria2=n2_ex,
-        n_removed_ex_gria2=n1_ex - n2_ex,
-        frac_removed_ex_gria2=(n1_ex - n2_ex) / n1_ex if n1_ex else np.nan,
-        # the gap accepted by keeping Set 2 on the 19-gene NC list, as a fraction of Set 1
-        gap_frac_of_set1=(g1 - g2) / n1 if n1 else np.nan,
-    )])
-
-
-# ============================================================ stage D ============================================================ #
+# ============================================================ grids ============================================================ #
 
 def _grid_edges(x, y, grid_len):
-    """The one place lattice edges are built. tissue_area, tissue_mask, density_quintiles and
-    local_lambda_grid previously each carried their own verbatim copy of this."""
+    """The one place lattice edges are built -- tissue_area, tissue_mask and density_quintiles
+    previously each carried their own verbatim copy of this."""
     xb = np.arange(np.floor(x.min() / grid_len) * grid_len,
                    np.ceil(x.max() / grid_len) * grid_len + grid_len, grid_len)
     yb = np.arange(np.floor(y.min() / grid_len) * grid_len,
                    np.ceil(y.max() / grid_len) * grid_len + grid_len, grid_len)
     return xb, yb
-
-
-def _occupancy_fraction(x, y, xb, yb, fine=1.0):
-    """Fraction of `fine`-um cells that hold >=1 transcript, per coarse lattice cell.
-
-    Mirrors the denominator in model.py::tissue_area (nonzero 1um cells x grid_len^2). Without it
-    a granule beside a ventricle or at a section edge is credited with empty space as background
-    and survives every threshold.
-    """
-    coarse_x, coarse_y = float(xb[1] - xb[0]), float(yb[1] - yb[0])
-    kx, ky = int(round(coarse_x / fine)), int(round(coarse_y / fine))
-    # A rounded k silently truncates the fine grid and misaligns every coarse cell against its
-    # block -- no error, and a wrong lambda everywhere downstream. Exact at 25/1; assert it.
-    if abs(kx * fine - coarse_x) > 1e-9 or abs(ky * fine - coarse_y) > 1e-9:
-        raise ValueError(f"coarse grid ({coarse_x} x {coarse_y}) must be an exact multiple "
-                         f"of fine ({fine})")
-
-    nx, ny = (len(xb) - 1) * kx, (len(yb) - 1) * ky
-    # built from the count, not from arange on floats, so the shape is exact by construction
-    fxb = xb[0] + fine * np.arange(nx + 1)
-    fyb = yb[0] + fine * np.arange(ny + 1)
-    h, _, _ = np.histogram2d(x, y, bins=[fxb, fyb])
-    occupied = (h > 0).astype(np.float32)
-    return occupied.reshape(len(xb) - 1, kx, len(yb) - 1, ky).mean(axis=(1, 3))
-
-
-def local_lambda_grid(transcripts, genes, grid_len=None, exclude_mask=None, fine=1.0):
-    """Per-gene transcript COUNTS on a lattice, plus the tissue-occupancy fraction per cell.
-
-    One `np.histogramdd` over (x, y, gene_code) instead of one `histogram2d` per gene -- 290
-    separate passes over a 10^8-row column was the previous cost.
-
-    `exclude_mask` drops transcripts (used to bracket neighbour contamination by removing all
-    Set-2 granule transcripts). The lattice edges and the occupancy grid are BOTH derived from
-    the full, unfiltered table, so the two `ADAPTIVE_EXCLUDE_GRANULE_TX` arms land on the
-    identical grid and are cell-comparable -- deriving the edges from the filtered table, as this
-    previously did, silently shifted every `searchsorted` index between arms.
-
-    Returns (counts dict gene -> 2D array, occupancy 2D array, x_edges, y_edges).
-    """
-    grid_len = C.ADAPTIVE_GRID if grid_len is None else grid_len
-    x_all = transcripts["global_x"].to_numpy()
-    y_all = transcripts["global_y"].to_numpy()
-    xb, yb = _grid_edges(x_all, y_all, grid_len)
-    occ = _occupancy_fraction(x_all, y_all, xb, yb, fine=fine)
-
-    genes = list(genes)
-    keep = np.ones(len(transcripts), bool) if exclude_mask is None else ~np.asarray(exclude_mask)
-    code = pd.Categorical(transcripts["target"], categories=genes).codes
-    sel = keep & (code >= 0)
-    H, _ = np.histogramdd(
-        (x_all[sel], y_all[sel], code[sel].astype(float)),
-        bins=[xb, yb, np.arange(len(genes) + 1) - 0.5])
-    return {g: H[:, :, i] for i, g in enumerate(genes)}, occ, xb, yb
-
-
-def disc_sum(counts_2d, occ, R, grid_len=None):
-    """Box-sum a lattice over the ceil(R/grid) neighbourhood -> (summed counts, occupied area).
-
-    This is what makes `R` enter the arithmetic at all. Without it every radius in C.ADAPTIVE_R
-    reads the same single lattice cell and returns an identical survival curve.
-
-    The window is a square of half-width k cells rather than a true disc; at R = 25 and 50 um on
-    a 25 um lattice that is k = 1 and 2. The area denominator uses the SAME window, so the ratio
-    (a density) stays correct -- only the window's shape is approximate, which is disclosed.
-    """
-    from scipy.ndimage import uniform_filter
-
-    grid_len = C.ADAPTIVE_GRID if grid_len is None else grid_len
-    k = int(np.ceil(R / grid_len))
-    w = 2 * k + 1
-    n = w * w
-    tot = uniform_filter(counts_2d.astype(float), size=w, mode="constant", cval=0.0) * n
-    occ_cells = uniform_filter(occ.astype(float), size=w, mode="constant", cval=0.0) * n
-    return tot, occ_cells * (grid_len ** 2)          # OCCUPIED area only
-
-
-def adaptive_min_samples(lambda_local, alpha, eps=None, cutoff_prob=None, low_bound=None):
-    """m_local = max(poisson.ppf(cutoff_prob, alpha * lambda * pi * eps^2), low_bound).
-
-    Same functional form as model.py:88-93, with lambda local rather than section-wide. 2D by
-    construction, matching the published rule -- switching both locality and dimensionality at
-    once would confound the sensitivity analysis.
-    """
-    eps = C.EPS if eps is None else eps
-    cutoff_prob = C.CUTOFF_PROB if cutoff_prob is None else cutoff_prob
-    low_bound = C.LOW_BOUND if low_bound is None else low_bound
-    mu = alpha * np.asarray(lambda_local, dtype=float) * (np.pi * eps ** 2)
-    return np.maximum(poisson.ppf(cutoff_prob, mu=mu), low_bound).astype(int)
-
-
-def adaptive_survival(k_g, lambda_local, alphas=None):
-    """survives <=> k_g >= m_local, over an alpha sweep -> a survival CURVE, not one number.
-
-    `k_g` is the count of the SEED gene that formed this cluster, with the granule's own
-    transcripts already subtracted from lambda_local -- otherwise the granule inflates its own
-    background and the test is self-defeating. k_g is NOT `size` (which pools all markers and is
-    stale after merging); it comes from the persisted sphere_dict.
-    """
-    alphas = alphas or C.ADAPTIVE_ALPHA_SWEEP
-    k_g = np.asarray(k_g, dtype=float)
-    rows = []
-    for a in alphas:
-        m = adaptive_min_samples(lambda_local, a)
-        rows.append(dict(alpha=a, n=int(k_g.size), n_survive=int((k_g >= m).sum()),
-                         frac_survive=float((k_g >= m).mean()) if k_g.size else np.nan,
-                         median_m_local=float(np.median(m)) if k_g.size else np.nan))
-    return pd.DataFrame(rows)
 
 
 # ============================================================ A3b ============================================================ #
@@ -794,8 +641,16 @@ def dbscan_core_predicate(pseudo, transcripts_by_gene, eps=None, min_samples=Non
             skipped[m] = True          # gene has no transcripts: recorded, never silently False
             continue
         tree, coords = transcripts_by_gene[g]
-        # (1) transcripts of the seed gene inside each pseudo-sphere
-        inside = tree.query_ball_point(cen[m], rad[m], workers=-1)
+        # (1) transcripts of the seed gene inside each sphere.
+        # The ball MUST carry C.KG_BUFFER. sphere_r is the MINIMUM-ENCLOSING radius
+        # (miniball.get_bounding_ball), so for a REAL granule its own support points sit exactly
+        # ON the surface and a query at exactly sphere_r loses them to floating point -- which
+        # showed up as median n_local = 2 for the real arm, below the min_samples = 3 that
+        # provably held when DBSCAN formed that cluster. Pseudo-spheres have no support points on
+        # their surface, so the buffer moves them only by the generic volume term (~3% at the
+        # median radius): the correction is far larger for the real arm than for the pseudo arms,
+        # and therefore WIDENS the gap rather than flattering it.
+        inside = tree.query_ball_point(cen[m], rad[m] + C.KG_BUFFER, workers=-1)
         n_local[m] = np.fromiter((len(c) for c in inside), dtype=np.int64, count=int(m.sum()))
         # (2) is any of them a core point in the gene's full cloud?
         flat = [j for c in inside for j in c]
@@ -827,16 +682,28 @@ def partition_transcripts(transcripts, granules, buffer=None, z_col="layer_z",
     (downstream.py:706-712) while the sphere spans neighbours; profile() counts ALL transcripts in
     the sphere including overlaps_nucleus == 1, so it over-subtracts from an extrasomatic-only
     layer; and overlapping granules double-count shared transcripts. The clip at 0 then makes the
-    bias one-sided and worst for the MARKER genes -- exactly where the result lives.
+    bias one-sided. MEASURED, the clip is small and is NOT marker-biased: non-markers are affected
+    in a median 0.046% of spots against 0.000% for the markers, i.e. ~24x LESS where the published
+    result lives. The transcript-level rebuild is justified by the three structural errors above,
+    not by the clip.
 
     The three arms are disjoint and sum to len(transcripts) exactly.
 
+    BUFFER. The containment query runs at sphere_r + C.KG_BUFFER, not at bare sphere_r. sphere_r
+    is the MINIMUM-ENCLOSING radius, so a granule's own support points -- overwhelmingly its seed
+    gene -- sit exactly on the surface. Measured on a WT window, a bare-radius query loses 11.6%
+    of the granule layer and 93.6% of what it loses are SYN_GENES, which misfiles marker
+    transcripts into residual_extrasomatic and attenuates the very contrast this table measures.
+
     CACHING. Assigning ~10^8 transcripts against ~10^6 spheres is the single most expensive
-    operation in A3, so the result is cached to C.transcript_layer_path(sample) and reused: A3c
-    section 1 computes it, A3a section 6 reads it. Pass `sample` to enable caching; `cache=False`
-    forces a recompute.
+    operation in A3, so the result is cached to C.transcript_layer_path(sample) and reused within
+    A3c. Pass `sample` to enable caching; `cache=False` forces a recompute.
+
+    The cache is keyed on the sample alone, so it CANNOT detect a changed granule set, buffer or
+    z_col -- the length check below is not a settings check. Callers must thread their OVERWRITE
+    toggle into `cache` rather than rely on this function to notice.
     """
-    buffer = C.DE_SPHERE_BUFFER if buffer is None else buffer
+    buffer = C.KG_BUFFER if buffer is None else buffer
 
     if sample is not None and cache:
         cached = C.transcript_layer_path(sample)
@@ -899,20 +766,47 @@ def composition_logfc(counts_a, counts_b, eps=None):
 
 
 def axis1_table(counts_by_layer, genes, markers=None):
-    """The reviewer's Axis 1, with a granule-free baseline.
+    """The reviewer's Axis 1, computed against BOTH candidate baselines.
 
-    baseline_logFC     residual_extrasomatic vs intrasomatic  -- detection-INDEPENDENT, and
-                       granule transcripts are excluded, so the baseline no longer contains the
-                       signal it is supposed to be a null for
-    granule_enrichment granule vs intrasomatic                -- SAME reference as the baseline
-    delta              granule_enrichment - baseline_logFC
+    The reviewer asked for "differential expression between somatic RNA and all non-somatic RNA,
+    INDEPENDENT OF GRANULE DETECTION", then for the granule-specific differences to be compared
+    against it. That fixes which baseline is primary:
 
-    Then a regression of granule_enrichment on baseline_logFC fitted on NON-markers gives the
-    reference line; markers above it are enriched beyond what the baseline predicts.
+    baseline_all_logFC       (granule + residual_extrasomatic) vs intrasomatic   -- PRIMARY.
+                             All non-somatic RNA, exactly as worded. Genuinely independent of
+                             granule detection: no sphere is needed to define either layer.
+    baseline_logFC           residual_extrasomatic vs intrasomatic               -- SENSITIVITY.
+                             Granule-free, so the baseline does not contain the signal it is a
+                             null for. But `residual_extrasomatic` is "extrasomatic AND not
+                             inside a called sphere", so it is detection-DEPENDENT by
+                             construction. Do NOT describe it as detection-independent.
+    granule_enrichment       granule vs intrasomatic  -- the same soma reference as both.
 
-    Returns (df, regression_dict). Frame the
+    Including the granule transcripts in the baseline biases the difference TOWARD ZERO, i.e. the
+    primary is the more conservative of the two as well as the literal one. Both are reported;
+    they agree (see axis1_divergence_test.csv).
+
+    WHY SOMA IS THE REFERENCE, given that granules are extrasomatic. It is a presentation device,
+    not a claim about biology: a shared denominator puts the two quantities on one axis so they
+    can be plotted and regressed against each other, and it then CANCELS EXACTLY out of the
+    difference --
+
+        delta = [log2 sh_gnl - log2 sh_soma] - [log2 sh_res - log2 sh_soma]
+              =  log2 sh_gnl - log2 sh_res
+
+    so `delta` is granule-versus-extrasomatic and carries no soma term at all (asserted to 1e-9
+    by A3c section 6). The predecessor, code/old/benchmark_diffusion.ipynb, used a DIFFERENT
+    reference on each axis, so its `delta` subtracted two logFCs sharing no denominator; that is
+    what the shared reference fixes. NOTE the cancellation does not extend to `residual`: the
+    fitted slope is ~1.18, not 1, so that statistic does depend on the soma layer.
+
+    Then a regression of granule_enrichment on the baseline, fitted on NON-markers, gives the
+    reference line; markers above it are enriched beyond what the baseline predicts. Frame the
     claim as DIVERGENCE rather than excess -- the reviewer's own wording is "exceed OR DIVERGE
     FROM", and divergence survives compositional normalisation, which |logFC| does not.
+
+    Returns (df, regression_dict) with keys slope/intercept (sensitivity) and
+    slope_all/intercept_all (primary).
     """
     markers = set(markers or C.SYN_GENES)
     soma = np.array([counts_by_layer["intrasomatic"].get(g, 0) for g in genes], dtype=float)
@@ -923,24 +817,569 @@ def axis1_table(counts_by_layer, genes, markers=None):
     df = pd.DataFrame({
         "gene": genes,
         "n_intrasomatic": soma, "n_granule": gnl, "n_residual_extrasomatic": res,
+        "n_all_extrasomatic": gnl + res,
+        # PRIMARY -- the reviewer's literal "all non-somatic RNA"
+        "baseline_all_logFC": composition_logfc(gnl + res, soma),
+        # SENSITIVITY -- granule-free, but detection-dependent
         "baseline_logFC": composition_logfc(res, soma),
         "granule_enrichment": composition_logfc(gnl, soma),
     })
+    df["delta_all"] = df["granule_enrichment"] - df["baseline_all_logFC"]
     df["delta"] = df["granule_enrichment"] - df["baseline_logFC"]
     df["is_marker"] = df["gene"].isin(markers)
 
     nm = ~df["is_marker"]
-    if nm.sum() >= 2:
-        slope, intercept = np.polyfit(df.loc[nm, "baseline_logFC"],
-                                      df.loc[nm, "granule_enrichment"], 1)
-    else:
-        slope, intercept = np.nan, np.nan
-    df["expected_ge"] = slope * df["baseline_logFC"] + intercept
-    df["residual"] = df["granule_enrichment"] - df["expected_ge"]
-    df["above_regression"] = df["granule_enrichment"] > df["expected_ge"]
+    reg = {}
+    for suffix, xcol in [("_all", "baseline_all_logFC"), ("", "baseline_logFC")]:
+        if nm.sum() >= 2:
+            slope, intercept = np.polyfit(df.loc[nm, xcol], df.loc[nm, "granule_enrichment"], 1)
+        else:
+            slope, intercept = np.nan, np.nan
+        df[f"expected_ge{suffix}"] = slope * df[xcol] + intercept
+        df[f"residual{suffix}"] = df["granule_enrichment"] - df[f"expected_ge{suffix}"]
+        df[f"above_regression{suffix}"] = df["granule_enrichment"] > df[f"expected_ge{suffix}"]
+        reg[f"slope{suffix}"] = float(slope)
+        reg[f"intercept{suffix}"] = float(intercept)
     # Returned explicitly, not stashed in df.attrs -- attrs is dropped by to_csv/to_parquet and
     # propagates inconsistently through copy/merge/groupby, so the slope would vanish silently.
-    return df, dict(slope=float(slope), intercept=float(intercept))
+    return df, reg
+
+
+# ============================================================ A3d ============================================================ #
+
+def grid_origin(x, y, grid):
+    """The lattice a 2-D square grid of pitch `grid` is floored onto: (ox, oy, ny).
+
+    ONE definition, because two callers need identical bin ids. `bin_transcripts` aggregates the
+    section onto this lattice; A3e then has to ask which bin a granule CENTRE falls in. If either
+    re-derived the arithmetic the ids could disagree silently -- and a granule drawing its ambient
+    composition from the wrong bin is exactly the failure this analysis cannot afford.
+
+    The origin comes from the WHOLE section before any filtering, so the lattice does not shift
+    when the gene set or the layer set changes.
+    """
+    ox, oy = float(np.min(x)), float(np.min(y))
+    ny = int(np.floor((np.max(y) - oy) / grid)) + 1
+    return ox, oy, ny
+
+
+def grid_bin_id(x, y, ox, oy, ny, grid):
+    """Point coordinates -> the bin id used by `bin_transcripts`, on the lattice `grid_origin` gives."""
+    ix = np.floor((np.asarray(x, dtype=float) - ox) / grid).astype(np.int64)
+    iy = np.floor((np.asarray(y, dtype=float) - oy) / grid).astype(np.int64)
+    return ix * ny + iy
+
+
+def bin_transcripts(sample, grid=None, genes=None,
+                    layers=("granule", "residual_extrasomatic"), return_grid=False,
+                    verbose=True):
+    """Aggregate one sample's transcripts onto a fresh square grid, by gene and compartment.
+
+    Returns long `bin, gene, layer, n`, restricted to `genes` and `layers`.
+
+    THE GRID IS BUILT FROM SCRATCH, and deliberately not the way A3c builds its 50 um one. That
+    grid rounds onto the centres of the published spots object (A3c cell 10,
+    `np.round((x - sx.min()) / 50)`) because the claim it quantifies is a claim about that object.
+    There is no published 10 um spot object to anchor to, so this floors from the section's own
+    minimum. Both are square lattices of the same pitch; only the origin convention differs, and
+    nothing downstream depends on which one is used.
+
+    2-D, pooling all seven z-planes, exactly as the 50 um grid does. A 10 x 10 um column through a
+    9 um section is close to isotropic, so splitting z would buy no locality and would cost a
+    great deal of sparsity in the local pool.
+
+    `return_grid=True` additionally returns the lattice (grid, ox, oy, ny), so a caller that
+    must map other points -- A3e maps granule centres -- gets its bin ids from `grid_bin_id` on
+    the SAME lattice rather than re-deriving the arithmetic.
+
+    Reads the per-transcript layer CACHED BY A3c rather than recomputing it. That file is one int8
+    column in the transcript table's own row order, so this is a positional concatenation and the
+    10^8-transcripts-against-10^6-spheres assignment -- the single most expensive operation in A3
+    -- is not repeated. The cache is keyed on the sample alone and cannot detect a changed granule
+    set (see partition_transcripts), so the caller must gate the result against the per-gene totals
+    in partition_counts.csv.
+    """
+    grid = C.LOCAL_NULL_GRID if grid is None else float(grid)
+    cached = C.transcript_layer_path(sample)
+    if not Path(cached).exists():
+        raise FileNotFoundError(
+            f"missing {cached}\n  Run A3c_de_baseline.ipynb section 1 first. A3d reuses its "
+            f"transcript partition and does not recompute one.")
+
+    tx = load_transcripts(sample, columns=["global_x", "global_y", "target"], verbose=verbose)
+    lab = pd.read_parquet(cached)["layer"].to_numpy()
+    assert len(lab) == len(tx), (
+        f"[{sample}] layer cache has {len(lab):,} rows against {len(tx):,} transcripts. The cache "
+        f"is POSITIONAL, so a length mismatch means it was written for a different table.")
+
+    layers = list(layers)
+    genes = list(genes)
+    n_gene, n_lay = len(genes), len(layers)
+    gidx = {g: i for i, g in enumerate(genes)}
+
+    # gene -> column, through the categorical's categories so the map runs once per category
+    # rather than once per transcript.
+    tgt = tx["target"]
+    if isinstance(tgt.dtype, pd.CategoricalDtype):
+        per_cat = np.array([gidx.get(c, -1) for c in tgt.cat.categories], dtype=np.int64)
+        gcode = per_cat[tgt.cat.codes.to_numpy()]
+    else:
+        gcode = tgt.map(gidx).fillna(-1).to_numpy().astype(np.int64)
+
+    lcode = np.full(len(tx), -1, dtype=np.int64)
+    for j, lay in enumerate(layers):
+        lcode[lab == C.DE_LAYERS.index(lay)] = j
+
+    # Origin from the WHOLE section, before any filtering, so the lattice does not shift when the
+    # gene set or the layer set changes.
+    x = tx["global_x"].to_numpy()
+    y = tx["global_y"].to_numpy()
+    ox, oy, ny = grid_origin(x, y, grid)
+    bin_id = grid_bin_id(x, y, ox, oy, ny, grid)
+    del x, y, tx, tgt, lab
+
+    keep = (gcode >= 0) & (lcode >= 0)
+    if verbose:
+        print(f"[{sample}] grid {grid:g} um, origin ({ox:.2f}, {oy:.2f}); "
+              f"{int(keep.sum()):,} of {len(keep):,} transcripts in scope", flush=True)
+
+    # One integer key per (bin, gene, layer) and a single sort, rather than a groupby over three
+    # columns of 10^8 rows.
+    key = (bin_id[keep] * n_gene + gcode[keep]) * n_lay + lcode[keep]
+    del bin_id, gcode, lcode, keep
+    uniq, cnt = np.unique(key, return_counts=True)
+    del key
+
+    lay_of = uniq % n_lay
+    rest = uniq // n_lay
+    # Narrow dtypes throughout: this table runs to ~3e7 rows per sample, and the obvious
+    # int64/object version costs a gigabyte for nothing. Categories are pinned to `genes` and
+    # `layers` order so the codes are directly usable as matrix column indices downstream.
+    out = pd.DataFrame({
+        "bin": (rest // n_gene).astype(np.int32),
+        "gene": pd.Categorical.from_codes((rest % n_gene).astype(np.int16), genes),
+        "layer": pd.Categorical.from_codes(lay_of.astype(np.int8), layers),
+        "n": cnt.astype(np.int32),
+        "sample": pd.Categorical([sample] * len(uniq), categories=list(C.SAMPLES)),
+    })
+    if verbose:
+        print(f"[{sample}] {len(out):,} non-empty (bin, gene, layer) cells over "
+              f"{out['bin'].nunique():,} bins", flush=True)
+    if return_grid:
+        return out, dict(grid=grid, ox=ox, oy=oy, ny=ny)
+    return out
+
+
+def local_null_matrices(binned, genes, layers=("granule", "residual_extrasomatic")):
+    """Long bin/gene/layer counts -> two aligned sparse bins x genes matrices, in `layers` order.
+
+    Rows are the sorted union of bins appearing in either layer and columns are `genes` in the
+    given order, so the two matrices, every moment vector and every simulated total share one
+    index. Alignment is the whole point of returning them together.
+    """
+    from scipy import sparse
+
+    genes = list(genes)
+    gidx = {g: i for i, g in enumerate(genes)}
+    bins = np.unique(binned["bin"].to_numpy())
+    row = np.searchsorted(bins, binned["bin"].to_numpy())
+
+    # Through the CATEGORICAL CODES, never .astype(str): materialising 3e7 Python strings to look
+    # them up in a dict is minutes and gigabytes, and it is pure waste when the codes already are
+    # the lookup.
+    def _codes(col, order):
+        v = binned[col]
+        if isinstance(v.dtype, pd.CategoricalDtype):
+            remap = np.array([order.index(c) if c in order else -1 for c in v.cat.categories],
+                             dtype=np.int64)
+            return remap[v.cat.codes.to_numpy()]
+        return pd.Series(v).map({o: i for i, o in enumerate(order)}).fillna(-1).to_numpy().astype(np.int64)
+
+    col = _codes("gene", genes)
+    assert (col >= 0).all(), "a gene in the binned table is absent from `genes`"
+    lay = _codes("layer", list(layers))
+    n = binned["n"].to_numpy().astype(np.float64)
+
+    mats = []
+    for j in range(len(layers)):
+        m = lay == j
+        mats.append(sparse.csr_matrix((n[m], (row[m], col[m])),
+                                      shape=(len(bins), len(genes))))
+    return bins, mats[0], mats[1]
+
+
+def local_null_moments(O, Cres, mode):
+    """Exact mean and variance of every gene's granule total under one of the two local nulls.
+
+    Bins are independent, so the total over bins has a closed-form mean and variance and needs no
+    simulation to get a p-value from. See a3_config's A3d block for the two definitions; in brief,
+    "literal" redraws each bin's granule transcripts from the composition of the residual RNA
+    beside them, and "permutation" relabels which of the bin's pooled non-somatic transcripts are
+    granule ones.
+
+    Returns (E, V), both length n_genes.
+    """
+    N = np.asarray(O.sum(axis=1)).ravel()
+    n = np.asarray(Cres.sum(axis=1)).ravel()
+    n_gene = O.shape[1]
+
+    if mode == "literal":
+        S = Cres.tocsr()
+        base = n
+    elif mode == "permutation":
+        S = (O + Cres).tocsr()
+        base = N + n
+    else:
+        raise ValueError(f"unknown mode {mode!r}; expected one of {C.LOCAL_NULL_MODES}")
+
+    assert (base > 0).all(), "a bin has an empty pool -- filter bins before taking moments"
+    rows = np.repeat(np.arange(S.shape[0]), np.diff(S.indptr))
+    q = S.data / base[rows]
+    w = N[rows]
+    E = np.bincount(S.indices, weights=w * q, minlength=n_gene)
+
+    if mode == "literal":
+        V = np.bincount(S.indices, weights=w * q * (1.0 - q), minlength=n_gene)
+    else:
+        # Finite-population correction: the permutation draws WITHOUT replacement, so a bin whose
+        # pool is entirely granule (M == N) has no freedom at all and contributes no variance.
+        # Without this the permutation p-values are anticonservative in exactly the dense bins
+        # that carry the most weight.
+        M = base
+        fpc = np.where(M > 1, (M - N) / np.maximum(M - 1.0, 1.0), 0.0)[rows]
+        V = np.bincount(S.indices, weights=w * q * (1.0 - q) * fpc, minlength=n_gene)
+    return E, V
+
+
+def local_null_permutation_check(O, Cres, n_bin_check=None, n_rep=None, rng=None, verbose=True):
+    """Brute force: physically shuffle labels in real bins and compare against the closed form.
+
+    This is the gate that makes `local_null_moments` believable. Two implementations of one
+    formula agreeing proves only that the arithmetic was copied correctly; it cannot catch a WRONG
+    formula. So this does the dumb thing instead -- in each of `n_bin_check` randomly chosen real
+    bins, pool the granule and residual transcripts, draw N_b of them without replacement, and
+    count genes. Repeat `n_rep` times. If the closed form is the permutation null it claims to be,
+    the simulated per-gene mean lands on E within Monte-Carlo error and the simulated sd lands on
+    sqrt(V).
+
+    Bounded to a subset of bins on purpose: this is a correctness check on a formula, not a
+    result, and a few thousand bins pin the moments to well under a percent while running in
+    seconds. Whole-section brute force would take hours and prove nothing extra.
+
+    Returns a frame with one row per gene: analytic_mean, mc_mean, analytic_sd, mc_sd, the z of
+    the mean difference (expect ~N(0,1)) and the sd ratio (expect ~1), plus `granule_total_ok`,
+    which records that every shuffle preserved the granule transcript count exactly -- the null
+    moves composition, never abundance.
+    """
+    n_bin_check = C.LOCAL_NULL_CHECK_BINS if n_bin_check is None else int(n_bin_check)
+    n_rep = C.LOCAL_NULL_CHECK_REPS if n_rep is None else int(n_rep)
+    rng = np.random.default_rng(0) if rng is None else rng
+
+    Ocsr, Rcsr = O.tocsr(), Cres.tocsr()
+    n_bin, n_gene = Ocsr.shape
+    pick = rng.choice(n_bin, size=min(n_bin_check, n_bin), replace=False)
+    Osub, Rsub = Ocsr[pick], Rcsr[pick]
+
+    E, V = local_null_moments(Osub, Rsub, "permutation")
+    N = np.asarray(Osub.sum(axis=1)).ravel().astype(np.int64)
+
+    # One explicit label array per bin: the pooled multiset of gene codes, granule + residual.
+    K = (Osub + Rsub).tocsr()
+    pools = [np.repeat(K.indices[K.indptr[i]:K.indptr[i + 1]],
+                       K.data[K.indptr[i]:K.indptr[i + 1]].astype(np.int64))
+             for i in range(K.shape[0])]
+    if verbose:
+        print(f"    brute force: {n_rep:,} shuffles over {len(pools):,} real bins "
+              f"({sum(p.size for p in pools):,} transcripts)", flush=True)
+
+    sim = np.empty((n_rep, n_gene), dtype=np.int64)
+    for b in range(n_rep):
+        acc = np.zeros(n_gene, dtype=np.int64)
+        for i, pool in enumerate(pools):
+            if N[i] == 0:
+                continue
+            # argpartition draws N of M without replacement in O(M) rather than shuffling all of M
+            take = pool[np.argpartition(rng.random(pool.size), N[i])[:N[i]]]
+            acc += np.bincount(take, minlength=n_gene)
+        sim[b] = acc
+
+    sd = np.sqrt(V)
+    mc_mean, mc_sd = sim.mean(axis=0), sim.std(axis=0, ddof=1)
+    return pd.DataFrame(dict(
+        gene_index=np.arange(n_gene),
+        analytic_mean=E, mc_mean=mc_mean, analytic_sd=sd, mc_sd=mc_sd,
+        z_of_mean_diff=np.divide(mc_mean - E, sd / np.sqrt(n_rep),
+                                 out=np.zeros_like(E), where=sd > 0),
+        sd_ratio=np.divide(mc_sd, sd, out=np.ones_like(E), where=sd > 0),
+        granule_total_ok=bool((sim.sum(axis=1) == N.sum()).all()),
+        n_bin_check=len(pools), n_rep=n_rep))
+
+
+# ============================================================ A3e ============================================================ #
+
+def sample_pseudo_arms(n, rng, frac=None, arms=None):
+    """Assign each granule to exactly one arm. Returns an int8 code array into `arms`.
+
+    The converted arms are drawn as one disjoint block so no granule can land in both, which the
+    obvious "draw 10%, then draw 10% again" would not guarantee.
+    """
+    frac = C.PSEUDO_FRAC if frac is None else float(frac)
+    arms = list(C.PSEUDO_ARMS if arms is None else arms)
+    conv = [a for a in arms if a != "untouched"]
+    k = int(round(frac * n))
+
+    code = np.full(n, arms.index("untouched"), dtype=np.int8)
+    pick = rng.choice(n, size=k * len(conv), replace=False)
+    for j, arm in enumerate(conv):
+        code[pick[j * k:(j + 1) * k]] = arms.index(arm)
+    return code
+
+
+def granule_members(granules, points, buffer=None, z_col="layer_z", chunk=20_000, verbose=True):
+    """Which of `points` lies inside each sphere, with every point owned by exactly ONE sphere.
+
+    `points` is an (n, 3) array of transcript coordinates -- pass ONLY the granule-layer ones, so
+    the tree is 6 M points rather than 10^8. Returns a frame `point, granule, dist`.
+
+    THE BUFFER IS NOT OPTIONAL. The query runs at sphere_r + C.KG_BUFFER, matching
+    partition_transcripts. sphere_r is the MINIMUM-ENCLOSING radius, so a granule's own support
+    points -- overwhelmingly its seed gene -- sit exactly ON the surface, and a bare-radius query
+    loses 11.6% of the granule layer of which 93.6% are markers. In A3e that failure mode is
+    fatal rather than merely biased: the unrelabelled seed transcripts would stay in place and the
+    pseudo-granule would be re-detected for free.
+
+    SPHERES OVERLAP, so a transcript can fall in several. Each is assigned to the nearest centre,
+    ties broken by the lower granule row, so the relabelling rewrites every transcript exactly
+    once and the arms stay disjoint at transcript level.
+    """
+    buffer = C.KG_BUFFER if buffer is None else buffer
+    cen = granules[["sphere_x", "sphere_y", z_col]].to_numpy(dtype=float)
+    rad = granules["sphere_r"].to_numpy(dtype=float) + buffer
+    tree = cKDTree(np.asarray(points, dtype=float))
+
+    pt, gr = [], []
+    for lo in range(0, len(cen), chunk):
+        hi = min(lo + chunk, len(cen))
+        idx = tree.query_ball_point(cen[lo:hi], rad[lo:hi], workers=-1)
+        n_per = np.fromiter((len(c) for c in idx), dtype=np.int64, count=hi - lo)
+        if n_per.sum() == 0:
+            continue
+        pt.append(np.fromiter((j for c in idx for j in c), dtype=np.int64,
+                              count=int(n_per.sum())))
+        gr.append(np.repeat(np.arange(lo, hi), n_per))
+        if verbose and (lo // chunk) % 20 == 0:
+            print(f"    spheres {hi:,}/{len(cen):,}", flush=True)
+    if not pt:
+        return pd.DataFrame(dict(point=np.array([], np.int64), granule=np.array([], np.int64),
+                                 dist=np.array([], float)))
+
+    pt = np.concatenate(pt)
+    gr = np.concatenate(gr)
+    d = np.linalg.norm(np.asarray(points, dtype=float)[pt] - cen[gr], axis=1)
+
+    # nearest centre wins; ties by lower granule row. lexsort's last key is primary.
+    order = np.lexsort((gr, d, pt))
+    pt, gr, d = pt[order], gr[order], d[order]
+    first = np.ones(len(pt), dtype=bool)
+    first[1:] = pt[1:] != pt[:-1]
+    return pd.DataFrame(dict(point=pt[first], granule=gr[first], dist=d[first]))
+
+
+def local_pool_sizes(centres_xy, tree, radius, chunk=50_000, verbose=True):
+    """How many residual transcripts lie within `radius` of each granule centre. Counts only.
+
+    Counts, not indices: `return_length=True` never materialises the neighbour lists, so scoring a
+    whole ladder of candidate radii costs one cheap pass each instead of gigabytes of int64. This
+    is what lets the notebook report retention at several radii BEFORE committing to one.
+
+    2-D on purpose. `tree` is built over (x, y) with all seven z-planes pooled, exactly as A3d's
+    squares pool them: the section is 9 um deep, so a disc through it is a statement about the
+    plane, which is the interpretable one.
+    """
+    centres_xy = np.asarray(centres_xy, dtype=float)
+    out = np.empty(len(centres_xy), dtype=np.int64)
+    for lo in range(0, len(centres_xy), chunk):
+        hi = min(lo + chunk, len(centres_xy))
+        out[lo:hi] = tree.query_ball_point(centres_xy[lo:hi], radius, workers=-1,
+                                           return_length=True)
+        if verbose and (lo // chunk) % 4 == 0:
+            print(f"    centres {hi:,}/{len(centres_xy):,}", flush=True)
+    return out
+
+
+def draw_local_ambient(centres_xy, tree, res_code, radius, n_draw, rng, chunk=20_000,
+                       verbose=True):
+    """Redraw each granule's gene identities from the residual RNA within `radius` of its centre.
+
+    Returns (owner, code): `code[owner == i]` is `n_draw[i]` gene codes drawn WITHOUT REPLACEMENT
+    from the residual extrasomatic transcripts of granule i's own neighbourhood.
+
+    Without replacement because the claim being tested is physical -- these identities came from
+    real neighbouring ambient molecules, not from a fitted probability vector -- and because it is
+    the same permutation spirit as the locked A3d null. Each granule draws independently: two
+    granules in overlapping discs are two separate statements about that tissue, not one draw split
+    in two.
+
+    THE CALLER MUST HAVE FILTERED on pool >= max(min_pool, n_draw) already. This asserts it rather
+    than falling back to drawing with replacement: a fallback would silently apply a different
+    sampling scheme to exactly the largest granules, which are also the easiest to re-detect.
+
+    The disc is centred on the granule, so there is no edge artefact to explain away -- unlike
+    assigning each granule to whichever square of a fixed lattice its centre happens to land in.
+    """
+    centres_xy = np.asarray(centres_xy, dtype=float)
+    n_draw = np.asarray(n_draw, dtype=np.int64)
+    res_code = np.asarray(res_code)
+    assert len(centres_xy) == len(n_draw)
+
+    owner = np.repeat(np.arange(len(n_draw)), n_draw)
+    code = np.empty(int(n_draw.sum()), dtype=res_code.dtype)
+    at = np.concatenate([[0], np.cumsum(n_draw)])
+
+    for lo in range(0, len(centres_xy), chunk):
+        hi = min(lo + chunk, len(centres_xy))
+        idx = tree.query_ball_point(centres_xy[lo:hi], radius, workers=-1)
+        for j, nbrs in enumerate(idx):
+            i = lo + j
+            k = int(n_draw[i])
+            if k == 0:
+                continue
+            labels = res_code[nbrs]
+            if k > labels.size:
+                raise AssertionError(
+                    f"granule {i} asks for {k} labels from a pool of {labels.size}. The retention "
+                    f"rule (pool >= max(min_pool, k)) was not applied before drawing -- drawing "
+                    f"with replacement here would change the sampling scheme for exactly the "
+                    f"largest granules.")
+            # argpartition draws k of M without replacement in O(M), not O(M log M).
+            # kth must be < size, so an exact-fit draw takes the whole pool.
+            code[at[i]:at[i + 1]] = (labels if k == labels.size
+                                     else labels[np.argpartition(rng.random(labels.size), k)[:k]])
+        if verbose and (lo // chunk) % 4 == 0:
+            print(f"    drew for {hi:,}/{len(centres_xy):,} granules", flush=True)
+    return owner, code
+
+
+def apply_relabel_patch(transcripts, patch, sample=None, expect_rows=None):
+    """Rewrite `target` on the rows named by `patch`, in place, through the categorical's codes.
+
+    `patch` has POSITIONAL `row` (into the transcript table's own row order, NOT its
+    __index_level_0__, which carries gaps from Vizgen filtering) and `new_target`. Because every
+    drawn label is an existing target, this is a code assignment: no category is added, no string
+    is materialised, and 10^8 rows are never touched.
+
+    Refuses to run if the table is not the length the patch was built against -- the patch is
+    positional, so applying it to a different table would silently corrupt the wrong transcripts.
+    """
+    if expect_rows is not None and len(transcripts) != int(expect_rows):
+        raise ValueError(
+            f"[{sample}] patch was built against {int(expect_rows):,} transcripts but this table "
+            f"has {len(transcripts):,}. The patch is POSITIONAL and must not be applied.")
+
+    tgt = transcripts["target"]
+    if not isinstance(tgt.dtype, pd.CategoricalDtype):
+        tgt = tgt.astype("category")
+    cats = list(tgt.cat.categories)
+    cmap = {c: i for i, c in enumerate(cats)}
+    new = patch["new_target"].astype(str).map(cmap)
+    if new.isna().any():
+        missing = sorted(set(patch["new_target"].astype(str)) - set(cats))[:5]
+        raise ValueError(f"[{sample}] patch names targets absent from this table: {missing}")
+
+    codes = tgt.cat.codes.to_numpy().copy()
+    rows = patch["row"].to_numpy(dtype=np.int64)
+    if rows.max() >= len(codes) or rows.min() < 0:
+        raise ValueError(f"[{sample}] patch row index out of range")
+    codes[rows] = new.to_numpy(dtype=codes.dtype)
+    transcripts["target"] = pd.Categorical.from_codes(codes, cats)
+    return transcripts
+
+
+def provenance_match(new_spheres, points, owner, k_of, frac=None, buffer=None, z_col="layer_z",
+                     chunk=20_000, verbose=True):
+    """Which published granules did the re-run rebuild a sphere ON TOP OF?
+
+    The identity criterion, and the primary one. A granule G counts as re-detected when some sphere
+    of `new_spheres` contains at least `frac` of G's OWN transcripts -- `owner` says which granule
+    each point of `points` belongs to, `k_of[G]` how many G has.
+
+    WHY NOT GEOMETRY. `match_spheres`' rungs ask only whether a new sphere sits where G sat. They
+    cannot tell "the detector called this object again" from "the detector called something else
+    nearby", and 80% of granules are untouched and will certainly be called. Measured on the
+    published granules matched against themselves, a granule already contains a DIFFERENT granule's
+    centre 6.9% (WT) / 8.2% (AD) of the time under `center_in` and 34% / 39% under `intersect`. A
+    pseudo-granule that was entirely destroyed would collect that rate for free. Credit that
+    follows the molecules does not have the problem.
+
+    The ball query runs at `sphere_r + KG_BUFFER` centred on (sphere_x, sphere_y, `z_col`) -- the
+    `partition_transcripts` convention that defined ownership in the first place, so the two agree.
+
+    Returns a frame indexed like `k_of` with `hit_provenance`, `best_recall` (the largest share of
+    G's transcripts any single sphere managed, so a near miss is visible rather than a bare False)
+    `scorable` (False where G has no transcripts to rebuild on -- those are never scored, and never
+    silently divided by), and `n_crediting`, the number of spheres that cleared the threshold for
+    G; self-matching the published set against itself turns that into the criterion's false-credit
+    floor, directly comparable with the geometric ones.
+    """
+    frac = C.PSEUDO_PROVENANCE_FRAC if frac is None else float(frac)
+    buffer = C.KG_BUFFER if buffer is None else buffer
+    k_of = np.asarray(k_of, dtype=np.int64)
+    owner = np.asarray(owner, dtype=np.int64)
+    n_gran = len(k_of)
+
+    need = np.maximum(1, np.ceil(frac * k_of)).astype(np.int64)
+    best = np.zeros(n_gran, dtype=np.int64)          # most of G's own transcripts in any one sphere
+    n_credit = np.zeros(n_gran, dtype=np.int64)      # how many spheres clear the threshold for G
+    if len(new_spheres):
+        tree = cKDTree(np.asarray(points, dtype=float))
+        cen = new_spheres[["sphere_x", "sphere_y", z_col]].to_numpy(dtype=float)
+        rad = new_spheres["sphere_r"].to_numpy(dtype=float) + buffer
+        for lo in range(0, len(cen), chunk):
+            hi = min(lo + chunk, len(cen))
+            idx = tree.query_ball_point(cen[lo:hi], rad[lo:hi], workers=-1)
+            n_per = np.fromiter((len(c) for c in idx), dtype=np.int64, count=hi - lo)
+            if n_per.sum() == 0:
+                continue
+            flat = np.fromiter((j for c in idx for j in c), dtype=np.int64, count=int(n_per.sum()))
+            sph = np.repeat(np.arange(hi - lo, dtype=np.int64), n_per)
+            # one pass over (sphere, owner): pack both into a single key, count, then keep the
+            # largest count each granule achieved in any single sphere
+            key = sph * n_gran + owner[flat]
+            uniq, cnt = np.unique(key, return_counts=True)
+            own_of = uniq % n_gran
+            np.maximum.at(best, own_of, cnt)
+            np.add.at(n_credit, own_of[cnt >= need[own_of]], 1)
+            if verbose and (lo // chunk) % 10 == 0:
+                print(f"    spheres {hi:,}/{len(cen):,}", flush=True)
+
+    scorable = k_of > 0
+    return pd.DataFrame(dict(
+        hit_provenance=scorable & (best >= need),
+        best_recall=np.divide(best, k_of, out=np.zeros(n_gran, float), where=scorable),
+        n_own_found=best, n_own=k_of, scorable=scorable,
+        # >1 means more than one sphere holds half of G -- the self-match of the published set
+        # against itself turns this into the criterion's false-credit floor.
+        n_crediting=np.where(scorable, n_credit, 0)))
+
+
+def match_spheres(reference, redetected, criteria=None, z_col=None):
+    """For each sphere of `reference`, was it called again in `redetected`?
+
+    A thin orientation of overlap_pairs: `reference` is `a`, so under the asymmetric `center_in`
+    rung the question is "does a re-detected sphere's centre lie inside the original granule",
+    which is the tightest statement of 'the same object was called again' that does not depend on
+    radius drift. Returns a frame with one boolean and one count column per criterion.
+
+    z_col defaults to C.OVERLAP_Z_COL (sphere_z, the true centre), matching A3a's ladder.
+    """
+    criteria = list(C.PSEUDO_MATCH_CRITERIA if criteria is None else criteria)
+    res = overlap_pairs(reference, redetected, criterion=criteria, z_col=z_col)
+    out = pd.DataFrame(index=np.arange(len(reference)))
+    for c in criteria:
+        mask, counts = res[c]
+        out[f"hit_{c}"] = mask
+        out[f"n_{c}"] = counts
+    return out
 
 
 # ============================================================ reporting ============================================================ #

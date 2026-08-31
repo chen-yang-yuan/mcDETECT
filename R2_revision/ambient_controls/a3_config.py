@@ -7,9 +7,12 @@ Three sub-analyses share this module:
   A3a  three-set NC split + locally-adaptive threshold re-test  -- local, `A3a_three_sets.ipynb`
   A3b  vicinity pseudo-granule control                          -- local, `A3b_vicinity.ipynb`
   A3c  somatic-vs-non-somatic DE baseline                       -- local, `A3c_de_baseline.ipynb`
+  A3d  local-neighbourhood permutation null                     -- local, `A3d_local_null.ipynb`
+  A3e  ambient-relabelled pseudo-granules, re-detected          -- both,  `A3e_pseudo_granules.ipynb`
 
-plus one HGCC stage, `run_detection_sets.py`, which produces the Set 1 / Set 3 / Set 0 detections
-that A3a and A3b consume.
+plus two HGCC stages: `run_detection_sets.py`, which produces the Set 1 / Set 3 / Set 0 detections
+that A3a and A3b consume, and `run_pseudo_detection.py`, which re-runs the published pipeline over
+A3e's relabelled transcript table.
 
 Every constant that is *copied* from published code carries a `# from <file>:<lines>` comment.
 Nothing here is derived at import time from a data file, so this module is safe to import on a
@@ -38,6 +41,7 @@ DETECT_DIR = OUT_ROOT / "detect"           # stage 1, HGCC -- Sets 0 / 1 / 3 (6 
 A3A_DIR = OUT_ROOT / "a3a"
 A3B_DIR = OUT_ROOT / "a3b"
 A3C_DIR = OUT_ROOT / "a3c"
+A3D_DIR = OUT_ROOT / "a3d"           # stage 2, local -- the local-neighbourhood null
 FIG_DIR = OUT_ROOT / "figures"             # written ONLY by A3_figures.R
 
 
@@ -146,76 +150,23 @@ REF_GENES = ["Bsn", "Gap43", "Nrxn1", "Slc17a6", "Slc17a7", "Slc32a1", "Stx1a", 
              "Map1a", "Map2", "Ank3", "Nav1", "Nfasc", "Mapt", "Tubb3"]
 
 # --- the Gria2 collision ---------------------------------------------------------------------
-# Gria2 is in BOTH SYN_GENES and the 19-gene negative-control list. nc_filter counts it in the
-# numerator and `size` counts it in the denominator, so Gria2-seeded granules self-filter:
+# Gria2 is on BOTH the 20-gene marker list and the 19-gene negative-control list. The policy is
+# fixed and not revisited anywhere in A3:
 #
-#   Gria2 spheres      rough    + size/in-soma    published (Set 2)
-#   WT                 41,544         2,737              4
-#   AD                 20,525         1,139              0
+#   the 20-marker SEED list   -- never modified. Sets 1 and 2 both seed on all 20.
+#   Set 3's SEED list         -- 18 (Gria2 dropped). Seeding a control on a canonical dendritic
+#                                marker would manufacture the very overlap Set 3 exists to bound;
+#                                Gria2 is ~13x more abundant than the median control gene, so
+#                                keeping it could roughly double Set 3.
+#   Set 2                     -- read from disk exactly as published, on the 19-gene filter it
+#                                was actually built with.
 #
-# Quote the MIDDLE column: most Gria2 aggregates are intranuclear (consistent with Gria2 sitting
-# on a nuclear-enrichment list), so the loss attributable to the NC FILTER is ~2.7K / ~1.1K, not
-# 41K / 20K. For context, 97.1% (WT) / 97.6% (AD) of published granules have nc_ratio EXACTLY 0,
-# so the Set1-vs-Set2 difference is dominated by Gria2 and must be partitioned, never reported as
-# one number.
-#
-# POLICY. TWO SEPARATE GENE LISTS ARE INVOLVED, AND ONLY ONE OF THEM IS EVER MODIFIED:
-#
-#   SYN_GENES  -- 20 granule MARKERS, the DETECTION SEEDS (code/3_detection.py:55)
-#   nc_genes   -- 19 NEGATIVE CONTROLS, the NC FILTER list (negative_controls.csv)
-#
-# Gria2 is on both. Everything below concerns the NC LIST ONLY. The 20-marker seed list is used
-# unchanged everywhere in A3 -- Sets 1 and 2 both seed on all 20 (see SYN_GENES_UNCHANGED).
-#
-# The NC list has two versions, chosen by provenance:
-#
-#   Set 3's SEED list                    -> 18 (Gria2 dropped)
-#   the leave-one-out enumerated on Set 1 -> 18 (Gria2 dropped)
-#   nc_ratio recomputed on Set 2          -> 19 (as published)
-#
-# Excluding Gria2 from a NEW use is a correction, not an approximation: Gria2 is a granule marker
-# mis-listed as a nuclear-enrichment control, so dropping it makes Set 3 MORE faithful to
-# "nuclear-enriched negative controls". Keeping it would have been large relative to SET 3 --
-# Gria2 is ~13x more abundant than the median NC gene, so it could roughly double Set 3 and
-# manufacture a spurious Set1-intersect-Set3 overlap. Set 2 keeps 19 because that is the filter
-# the data on disk was actually built with.
-#
-# WHY SET 1 STILL SEEDS ON ALL 20 MARKERS. Set 1's whole job is to be "Set 2 minus the NC filter".
-# Seeding it on 19 would make it differ from Set 2 in TWO ways at once, and the difference would
-# no longer isolate the filter. The confound is real, not hypothetical: _remove_overlaps
-# (model.py:323-377) is order-dependent and propagates whole rows --
-#     containment with B larger -> `set_a.loc[i] = set_b.loc[j]`, A's row replaced WHOLESALE
-#                                  (gene label included)
-#     deep intersection         -> A's geometry refit over the union, A's gene label SURVIVES
-# so a Gria2 sphere can absorb, or be absorbed by, another marker's sphere. Dropping Gria2 from
-# the seeds would therefore change the geometry AND the labels of NON-Gria2 granules too.
-#
-# A consequence, noted rather than fixed: some SURVIVING Set-2 granules have geometry enlarged by
-# a merge with a Gria2 sphere that was only NC-filtered away afterwards. That is baked into the
-# published result.
-#
-# Dropping Gria2 from the MARKER list is also unnecessary and not free: it is a genuine
-# post-synaptic marker (it is in REF_GENES and MARKER_GENES["post-syn"]), and the published
-# population already contains effectively none of it (4 WT / 0 AD) -- so the effective marker set
-# is already 19, and saying so costs nothing. Re-running the published detection on 19 markers
-# would change Fig. 3-5 for a gene contributing 4 granules: out of scope.
-#
-# THE GAP. Keeping Set 2 on 19 while Set 3 seeds on 18 leaves the published population short of
-# the Gria2-seeded granules an 18-gene NC filter would have kept: at most ~2,737 of ~737,000 in
-# WT (0.37%) and ~1,139 of ~427,000 in AD (0.27%). These are UPPER BOUNDS taken from Set 1, which
-# applies no NC filter at all; most of those granules would clear an 18-gene filter anyway, since
-# the remaining controls are rare. Under half a percent, same direction in both samples, so it
-# cannot move the WT/AD contrast. Reported once in gria2_partition.csv, alongside a free
-# post-hoc sensitivity that strips Gria2-SEEDED rows from BOTH Set 1 and Set 2 so the two rest on
-# the same effective 19-marker population. No arm is built on any of it.
-#
-# Because of this policy there is no Set 3prime (all-19) detection -- it existed only to show the
-# choice does not matter, and Set 3prime - Set 3 is exactly the Gria2-seeded spheres, which Set 1
-# already contains.
+# The residual discrepancy this accepts is under half a percent of Set 1, in the same direction in
+# both samples, so it cannot move the WT/AD contrast. It is not analysed further.
 GRIA2 = "Gria2"
 SET3_EXCLUDE = [GRIA2]
 
-# The 20-marker SEED list is never modified by A3. Asserted in the A3a correctness gates.
+# The 20-marker SEED list is never modified by A3.
 SYN_GENES_UNCHANGED = True
 
 # The two NC-list versions, by name, so consumers never have to re-derive the rule. Both strings
@@ -279,8 +230,7 @@ DETECT_KWARGS_ROUGH = {**DETECT_KWARGS_FINE, "size_thr": 1e5, "in_soma_thr": 1.0
 # So min_samples = 3 IS the CSR rule at alpha = 0.5, and no result changes.
 #
 # A3 RUNS NO DETECTION AT alpha = 0.5, and re-detects nothing to prove the equivalence.
-# (alpha = 0.5 does appear in ADAPTIVE_ALPHA_SWEEP below -- that is the stage-D local
-#  threshold sweep, a post-hoc re-test of already-called granules, not a detection.) poisson_select
+# poisson_select
 # is a deterministic function of one gene's transcript count and the tissue area, so
 # "alpha = 0.5 => min_samples = 3 for every marker in both samples" is an ARITHMETIC IDENTITY --
 # checked by preflight/csr_min_samples.csv and one assertion in the A3a gates. DBSCAN is
@@ -298,10 +248,10 @@ CSR_EXPECTED_MIN_SAMPLES = 3      # what poisson_select must return at CSR_ALPHA
 # The set names used across every A3 output table.
 SETS = ["set0", "set1", "set2", "set3"]
 SET_LABEL = {
-    "set0": "Set 0 (abundance-matched neutral genes)",
-    "set1": "Set 1 (markers, no NC filter)",
+    "set0": "Set 0 (abundance-matched unannotated genes)",
+    "set1": "Set 1 (granule markers, before NC filtering)",
     "set2": "Set 2 (published)",
-    "set3": "Set 3 (NC genes minus Gria2)",
+    "set3": "Set 3 (nuclear-enriched control genes)",
 }
 # Which sets need a new detection run; set2 is read from output/ and never rewritten.
 # 3 sets x 2 samples = 6 array tasks.
@@ -325,9 +275,10 @@ FUNNEL_STAGES = ["raw", "size", "in_soma"]
 # i.e. two equal-radius spheres merge only within 0.4*r. That is VERY strict -- real granules
 # routinely overlap without merging -- so reporting only that predicate would understate
 # co-location and read as rigged. Lead with the loosest criterion instead.
-# The three boolean rungs, in report order. `jaccard` is NOT here: it is a continuous overlap
-# fraction reported as a distribution (a3_common.jaccard_balls), not a predicate, and
-# sphere_overlap() raises on it.
+# The three boolean rungs, in report order. Both directions are scored: what fraction of GRANULES
+# meet a control aggregate, and what fraction of CONTROL aggregates meet a granule. `center_in` is
+# asymmetric by construction ("b's centre lies inside a"), so under that rung the reverse
+# direction is the mirrored predicate, not the same number read backwards.
 OVERLAP_CRITERIA = ["intersect", "center_in", "merge"]
 OVERLAP_PRIMARY = "intersect"          # d < r_A + r_B
 MERGE_RHO = 0.2                        # from code/3_detection.py:84
@@ -337,53 +288,35 @@ MERGE_L = 1.0                          # from code/3_detection.py:84
 # identically to every set, and disclose the inherited inconsistency.
 OVERLAP_Z_COL = "sphere_z"
 
-# Raw |Set1 & Set3| is uninterpretable without an expectation, so it is reported as
-# observed/expected against Set-3 spheres randomly re-placed in the tissue mask at matched radius
-# and matched layer_z.
+# A raw intersection count is uninterpretable without an expectation, so the granule-side
+# fraction is reported as observed/expected against control spheres randomly re-placed in the
+# tissue mask at matched radius and matched layer_z. Each control set gets its own draws (the
+# seed carries the control name), because the null depends on that set's radii and z-plane
+# distribution. The control-side fraction carries no null: it is a plain ceiling -- "at most this
+# share of ambient aggregates touches a granule at all" -- and needs no expectation to be read.
 OVERLAP_N_NULL = 20
 OVERLAP_NULL_SEED = 0
+# The two control populations, scored identically against both granule sets.
+OVERLAP_CONTROLS = ["set0", "set3"]
+OVERLAP_BASES = ["set1", "set2"]
 
-# --- stage D: locally-adaptive threshold re-test ----------------------------------------------
-# poisson_select is a 2D AREAL intensity (tissue_area() is 2D grid occupancy * grid_len^2) against
-# a 2D DISC pi*eps^2, even though DBSCAN runs in 3D. The local version must match that functional
-# form or the comparison is meaningless -- so: 2D, per gene, same alpha/cutoff_prob/low_bound.
-#
-#   lambda_local(g,i) = [ N_g(disc R at (x,y)) - k_g(i) ] / [ pi R^2 * occ(x,y,R) ]
-#   m_local(g,i)      = max( poisson.ppf(0.95, alpha * lambda_local * pi * eps^2), low_bound )
-#   survives          <=> k_g(i) >= m_local(g,i)
-#
-# k_g(i) is the count of gene g that formed THIS cluster. Subtracting it is essential, otherwise
-# the granule inflates its own background and the test is self-defeating. It is NOT in
-# granules.parquet (`size` pools all markers and is stale after merging) -- it comes from the
-# per-gene sphere_dict persisted by run_detection_sets.py.
-ADAPTIVE_R = [25.0, 50.0]          # primary radii, um
-ADAPTIVE_R_SENSITIVITY = [10.0]    # below ~10um the disc holds ~6 transcripts -- Poisson noise
-ADAPTIVE_ALPHA_SWEEP = [0.5, 1.0, 5.0, 10.0]   # report a survival CURVE, not one number
-# Lattice on which the per-gene counts are binned. It must DIVIDE the smallest R in the sweep,
-# or radii collapse onto the same window: at 25 um, R = 10 and R = 25 both give k = 1 and the
-# "sensitivity" radius is not a sensitivity at all. At 10 um, R = 10/25/50 -> k = 1/3/5.
-# It must also be an exact multiple of the 1 um occupancy grid (asserted in _occupancy_fraction).
-ADAPTIVE_GRID = 10.0
-# lambda is a disc of radius R, not one lattice cell: the counts are box-summed over the
-# ceil(R / ADAPTIVE_GRID) neighbourhood and divided by the OCCUPIED area of that same disc.
-# Without this, R never enters the arithmetic and every radius returns the identical curve.
-ADAPTIVE_EXCLUDE_GRANULE_TX = [False, True]    # bracket the neighbour-contamination range
+# Any recount of a cluster's own transcripts by ball query on the FINAL sphere geometry must
+# carry a buffer.
+# sphere_r is the MINIMUM-ENCLOSING radius (miniball.get_bounding_ball), so the cluster's own
+# support points sit exactly ON the surface and a query at exactly sphere_r loses them to
+# floating point. Measured on the 321,053 Camk2a-seeded WT granules: at sphere_r only 43.6% have
+# k >= 3, at sphere_r * (1 + 1e-9) it is 99.88%. Without it a containment query reports a
+# floating-point artefact as a real rate; see the A3b detection-predicate note.
+# 0.01 um is the published convention -- mcDETECT.profile() takes `sphere_r + buffer`
+# (model.py:451) and code/4_post_detection.ipynb cells 21-22 use buffer = 0.01 for the Fig. R9
+# distributions; the A2 record documents the same support-point effect.
+KG_BUFFER = 0.01
 
-ADAPTIVE_CAVEATS = [
-    "Post-hoc re-test, not a re-detection: a truly adaptive min_samples changes which points are "
-    "core, hence cluster membership, the enclosing sphere, and k_g itself. Fixed-cluster "
-    "re-testing can only REMOVE granules, never add or reshape them.",
-    "It therefore bounds false-positive inflation but is SILENT on false negatives in "
-    "low-density regions, where an adaptive rule would be more permissive. AD is the "
-    "lower-density arm, so this cuts against our own effect direction.",
-    "lambda_local is contaminated by neighbouring granules; excluding the granule's own "
-    "transcripts fixes self-contamination only. Report it both with and without all Set-2 "
-    "granule transcripts removed -- the truth is bracketed by the two.",
-    "This tests spatial homogeneity, not Poisson-ness. If ambient is overdispersed even locally, "
-    "a Poisson cutoff under-corrects at every scale; fit a quasi-Poisson dispersion phi per gene "
-    "across 25um spots and add an NB arm if phi >> 1.",
-]
-
+# A3b section 7 gate: the fraction of REAL granules whose own seed gene still satisfies the DBSCAN
+# core-point criterion inside their own sphere. This must be ~1 by construction -- the cluster was
+# formed by that very criterion. The gate previously sat at 0.95, which was loose enough to accept
+# the 0.982 produced by the missing KG_BUFFER; with the buffer applied it should clear 0.99.
+PREDICATE_REAL_MIN = 0.99
 
 # ============================================================ A3b ============================================================ #
 
@@ -420,7 +353,12 @@ VICINITY_ARMS = {
 # a3_common.dbscan_core_predicate asks exactly that -- for a transcript of the SEED GENE lying
 # INSIDE the sphere. No margin and no clustering fit are involved.
 
-# Match on the covariate we are accused of ignoring.
+# STRATIFY on the covariate we are accused of ignoring -- these are NOT placement constraints.
+# place_vicinity_spheres draws a uniform-random in-plane angle and rejects only out-of-tissue,
+# in-nucleus and (rejected arm) granule-overlapping offsets. Region and density quintile are
+# labelled on the SOURCE granule and inherited by the copy, because a <= 50 um displacement
+# rarely leaves a 25 um density cell or a brain region; the results are then reported WITHIN
+# each level. That is a stratified comparison, not a matched design -- say so when describing it.
 VICINITY_MATCH_ON = ["brain_area", "density_quintile"]
 VICINITY_DENSITY_GRID = 25.0
 VICINITY_DENSITY_N_BINS = 5
@@ -447,11 +385,24 @@ DE_LAYERS = ["intrasomatic", "granule", "residual_extrasomatic"]
 # CENTRE (downstream.py:706-712) while the sphere spans neighbours; (2) profile() counts ALL
 # transcripts in the sphere including overlaps_nucleus == 1, so it over-subtracts from an
 # extrasomatic-only layer; (3) overlapping granules double-count shared transcripts. The
-# maximum(...,0) clip then makes the bias one-sided and worst for the MARKER genes -- exactly
-# where the result lives. Quantify: per gene, the fraction of spots where the raw difference is
-# negative before clipping.
+# maximum(...,0) clip then makes the bias one-sided. MEASURED (clip_bias_by_gene.csv), the clip is
+# small and is NOT marker-biased: non-markers negative in a median 0.046% of spots (max 0.32%)
+# against 0.000% (max 0.023%) for the 20 markers -- roughly 24x LESS exactly where the published
+# result lives. So the transcript-level rebuild is justified by errors (1)-(3), which are
+# structural, and the clip is reported as quantified-and-negligible rather than as a criticism.
+# Quantify: per gene, the fraction of spots where the raw difference is negative before clipping.
 
-DE_SPHERE_BUFFER = 0.0            # ball radius = sphere_r + buffer, matching profile()'s default
+# Ball radius for the transcript partition = sphere_r + DE_SPHERE_BUFFER.
+#
+# This was 0.0 ("matching profile()'s default"), which contradicted KG_BUFFER above and was wrong.
+# model.profile() does default to 0.0, but code/4_post_detection.ipynb cells 21-22 -- the cells
+# KG_BUFFER cites as the published convention -- pass buffer = 0.01. More decisively, sphere_r is
+# the MINIMUM-ENCLOSING radius, so a granule's own support points lie exactly on the surface:
+# measured on a WT window, a bare-radius partition loses 11.6% of the granule layer and 93.6% of
+# what it loses are SYN_GENES (Camk2a -23%, Cplx2 -19%, Map1a -19%). Those transcripts were
+# misfiled into residual_extrasomatic, attenuating granule enrichment for exactly the genes the
+# analysis is about -- conservative, but wrong.
+DE_SPHERE_BUFFER = KG_BUFFER
 
 # Axis 1. granule_enrichment uses the SAME soma reference as the baseline
 # (benchmark_diffusion.ipynb's USE_ALT_GRANULE_VS_SOMA branch, which ships switched OFF) --
@@ -473,6 +424,40 @@ DE_PUBLISHED_METHOD = "wilcoxon"  # from code/7_neuropil_subdomains.ipynb cell 9
 # (rho = 0.37 / 0.42 against the granule layer). What is missing is the WT-vs-AD contrast on the
 # same three layers over the same grid, which is the one that maps onto R2's bias concern.
 
+# --- the non-seed, non-control gene test (A3c section 5) -------------------------------------
+# The marker-vs-non-marker divergence test is CIRCULAR as an answer to "is the granule compartment
+# a passive sample of ambient RNA": mcDETECT draws a sphere around a dense cluster of seed-gene
+# transcripts, so the 20 markers are mechanically concentrated inside granules. Section 5 therefore
+# re-asks the question on genes that played no part in defining a granule -- neither seeding
+# detection (SYN_GENES) nor entering nc_filter (the 19-gene published NC list). 290 - 38 = 252.
+#
+# The annotation is the panel's OWN curated design sheet (gene_panel.csv, the same file select_set0
+# reads), written when the probe set was chosen and years before any granule was called. That is
+# what makes it an independent label rather than a post-hoc grouping.
+#
+# The Neuropil column is tested and reported even though it does NOT separate: its values mix
+# subcellular localisation with panel provenance ("Xenium" is one of them), and disclosing the null
+# is cheaper than being asked why three annotation columns existed and one was shown.
+PANEL_ANNOT_COLS = {"cell_type": "Cell type markers",
+                    "synapse": "Synapse markers",
+                    "neuropil": "Neuropil"}
+NONSEED_NEURONAL = ["Excitatory neurons", "Inhibitory neurons"]
+NONSEED_GLIAL = ["Astrocytes", "Oligodendrocytes", "Microglia", "OPC",
+                 "Pericytes/Endothelial", "Fibroblast"]
+NONSEED_SYNAPSE = ["pre-syn", "post-syn"]
+NONSEED_NEUROPIL = ["Dendrites", "Axons", "Neuropil"]
+# Primary statistic is the count model's granule-vs-residual logFC: it is measured WITHIN the same
+# 50 um spot, so "granules simply sit in neuropil" cannot produce it. The compositional residual is
+# carried as a robustness arm because it is built a completely different way.
+NONSEED_STATS = ["logFC_granule_vs_residual", "residual_all"]
+NONSEED_PRIMARY_STAT = "logFC_granule_vs_residual"
+# Each gene contributes ONE value to this test, so the spot-level pseudo-replication that makes the
+# count model's own p-values anticonservative does not apply to it. The model supplies effect
+# sizes; the inference happens across genes.
+NONSEED_TEST_NOTE = ("gene-level Mann-Whitney, one value per gene, so the spot-level "
+                     "pseudo-replication caveat on the count model does not apply")
+
+
 # Two reporting rules, both load-bearing.
 REPORTING_RULES = [
     "Significant-gene COUNTS are not comparable across layers: the layers differ in counts per "
@@ -485,6 +470,246 @@ REPORTING_RULES = [
     "granule-vs-residual-ambient DIVERGENCE, which is a within-sample comparison.",
 ]
 
+
+# ============================================================ A3d ============================================================ #
+#
+# A LOCAL SAMPLING NULL. A3c section 5 answers "is a granule a random draw from the RNA around it?"
+# with summary statistics -- E(g), a share-ratio over 50 um squares, and R(g), a whole-section
+# regression residual. Neither states the reviewer's hypothesis as a generative model and rejects
+# it. A3d does: it preserves the number of transcripts each granule actually holds, redraws them
+# from the composition of the RNA beside it, and asks whether the observed neuronal enrichment and
+# glial depletion fall outside what those redraws produce.
+
+# Neighbourhood side, in um. Five times tighter than C.SPOT_GRID, so the standing objection
+# "granules sit in neuron-rich neighbourhoods" has five times less room to operate. A 10 x 10 um
+# column through a 9 um section is close to isotropic, which is why the grid stays 2-D.
+LOCAL_NULL_GRID = 10.0
+
+# ONE NULL: THE PERMUTATION. Pool a bin's granule and residual extrasomatic transcripts and
+# randomly relabel which N_b of them are "granule". That is exactly multivariate hypergeometric,
+# and it is the reviewer's hypothesis stated as a generative model.
+#
+# A literal multinomial variant -- treat the residual composition p_b as KNOWN and draw
+# X_b ~ Multinomial(N_b, p_b) -- was evaluated and retired. Two reasons, in order:
+#   1. It assumes away the uncertainty in a composition estimated from a finite local pool, so its
+#      p-values are anticonservative; measured on exchangeable data (the split-half gate) its
+#      z-scores came out ~1.4x too wide, while the permutation's were unit-spread.
+#   2. Its purpose -- to state the hypothesis as something you could actually GENERATE -- is now
+#      served far better by A3e, which builds the pseudo-granules physically and runs the detector
+#      over them.
+# Nothing that was reported ever came from the literal variant, so nothing changes by dropping it.
+#
+# Bins are independent, so the null has closed-form totals over bins:
+#   E_g = sum_b N_b K_bg / M_b
+#   V_g = sum_b N_b (K_bg/M_b) (1 - K_bg/M_b) (M_b - N_b) / (M_b - 1)
+# with K_bg = O_bg + c_bg and M_b = N_b + n_b. The last factor is the finite-population
+# correction; without it the p-values are anticonservative in exactly the dense bins that carry
+# most of the weight. Those moments are what the per-gene p-values are computed from, and a
+# brute-force gate physically shuffles labels on a random subset of real bins to confirm they are
+# the moments of the permutation actually being described.
+LOCAL_NULL_MODES = ["permutation"]
+
+# The GROUP statistic T has no closed form, so it is referred to a parametric null built from the
+# per-gene moments above: independent normals, this many draws.
+LOCAL_NULL_T_DRAWS = 100_000
+
+# The brute-force check on the closed form (gate (c)): shuffle labels physically in this many
+# randomly chosen real bins, this many times, and compare the simulated per-gene mean and sd
+# against the algebra. Bounded rather than whole-section because it is a correctness check on a
+# formula, not a result -- a few thousand bins pin the moments to well under a percent.
+LOCAL_NULL_CHECK_BINS = 2000
+LOCAL_NULL_CHECK_REPS = 1000
+
+LOCAL_NULL_SEED = 0                         # combined with the sample name via crc32, never hash()
+
+# A bin carries a null only if its local pool is big enough to estimate a composition from. Bins
+# below this are dropped and the loss is reported in a3d_local_null_scope.csv rather than buried:
+# if the kept bins do not cover most of the granule layer, the result is about a subset and must
+# be described as one.
+LOCAL_NULL_MIN_POOL = 20
+
+# With millions of transcripts, significance alone proves very little -- a 1% compositional shift
+# clears any p-value threshold. Every significance count is therefore reported beside a count of
+# genes whose observed/expected ratio exceeds this fold change in either direction.
+LOCAL_NULL_EFFECT_THR = 1.25
+
+# The one statistic that answers the reviewer directly:
+#   T = median(log2 obs/exp | neuronal) - median(log2 obs/exp | glial + vascular)
+# over the same NONSEED_NEURONAL / NONSEED_GLIAL labels section 5 uses, on the same 252 neutral
+# genes. Its null distribution comes from LOCAL_NULL_T_DRAWS parametric draws.
+LOCAL_NULL_GROUP_STAT = ("median log2(obs/exp) in neuronal genes minus the same in glial and "
+                         "vascular genes, both from the panel's own annotation sheet")
+
+
+
+# ============================================================ A3e ============================================================ #
+#
+# THE REVIEWER'S HYPOTHESIS, BUILT AND FED BACK TO THE DETECTOR. A3d answers "could a granule's
+# composition be a random draw from the RNA around it?" in z-scores. A3e answers the same question
+# with the detector itself: take real granules, keep every transcript exactly where it is, replace
+# only the GENE IDENTITIES with labels drawn from the surrounding ambient RNA, and re-run mcDETECT
+# over the whole section. If mcDETECT is calling locally dense patches of ambient RNA, it calls
+# these back; if it is calling compositionally distinct compartments, it misses them.
+#
+# WHY THIS IS NOT CIRCULAR. mcDETECT seeds DBSCAN on the 20 markers, so "remove the markers and it
+# stops detecting" would prove nothing on its own. Three things make the number informative:
+#   1. Local density is held EXACTLY fixed -- every transcript keeps its own (x, y, z) and only
+#      `target` changes. The reviewer's "locally elevated ambient RNA" is fully preserved, and
+#      composition is the only thing that varies.
+#   2. Ambient is not marker-free. The 20 markers are ~32% of all transcripts, so a local ambient
+#      draw puts real marker labels back into the pseudo-granule. The re-detection rate is
+#      MEASURED and could have come out high.
+#   3. The `scramble` arm below separates composition from geometry.
+#
+# NOT A REPEAT OF A3b. A3b displaces a sphere to a nearby empty location and applies a
+# detectability predicate. A3e keeps the location, changes the contents, and runs the real detector
+# end to end.
+
+A3E_DIR = OUT_ROOT / "a3e"                 # stage 3 -- construction local, detection on HGCC
+
+
+def pseudo_detect_dir(sample):
+    """Per-sample re-detection output for the patched transcript table."""
+    return A3E_DIR / f"detect_{sample}"
+
+
+def pseudo_relabel_path(sample):
+    """The patch: positional row index + new target code, for the changed rows only.
+
+    Deliberately NOT a copy of the transcript table. The patch is ~10% of the granule layer
+    (~1.2 M rows in WT against 103 M transcripts), so it is small enough to rsync and to read
+    beside the diff, and it is the auditable record of exactly what was changed.
+
+    POSITIONAL, like transcript_layer_<sample>.parquet: `row` indexes the transcript table's own
+    row order, which is NOT its __index_level_0__ (that carries gaps from Vizgen filtering).
+    a3e_relabel_scope.csv records the table length the patch was built against, and the driver
+    asserts it before applying anything.
+    """
+    return A3E_DIR / f"a3e_relabel_{sample}.parquet"
+
+
+# --- the three arms ---------------------------------------------------------------------------
+# One random sample and ONE detection run per section. What makes a single run sufficient is the
+# untouched arm: it is simultaneously the proof that the re-run reproduces the published pipeline
+# and the proof that the perturbation stayed local.
+#
+#   ambient    labels redrawn from the local residual extrasomatic composition -- the hypothesis
+#   scramble   the granule's OWN labels permuted among its own points. Composition preserved
+#              exactly, geometry scrambled identically to the ambient arm. Without this, a low
+#              ambient re-detection rate is ambiguous: relabelling also scrambles WHICH point
+#              carries which gene, and that alone could break DBSCAN's eps-connectivity. The
+#              ambient arm read against the scramble arm is the purely COMPOSITIONAL effect.
+#   untouched  the remainder, changed in no way
+PSEUDO_ARMS = ["ambient", "scramble", "untouched"]
+PSEUDO_CONVERTED_ARMS = ["ambient", "scramble"]
+PSEUDO_FRAC = 0.10                          # of published granules, per converted arm
+PSEUDO_SEED = 0                             # crc32 with the sample name, as everywhere in A3
+
+# Relabelling is applied to the transcripts of the GRANULE LAYER inside the sphere, i.e. those
+# with overlaps_nucleus == 0. Intrasomatic transcripts inside a granule sphere are left alone:
+# they belong to the somatic layer by A3c's partition, in_soma_ratio < 0.1 caps them at a tenth of
+# the sphere, and rewriting them would be modifying soma content to answer a question about
+# extrasomatic RNA.
+PSEUDO_RELABEL_LAYER = "granule"
+
+# --- the local ambient pool -------------------------------------------------------------------
+# A DISC CENTRED ON THE GRANULE, not a square of a fixed lattice.
+#
+# The obvious implementation reuses A3d's 10 um grid and gives each granule the residual RNA of
+# whichever square its centre happens to fall in. That was the first version and it is wrong for
+# this analysis: the granule is not centred in that square. Its centre sits a median ~2.5 um -- and
+# up to 7 um at a corner -- from the middle of the neighbourhood it is being compared against, so
+# "the RNA around this granule" is measurably off-centre and asymmetric. A3d can live with that,
+# because it needs a PARTITION of the section to sum closed-form moments over. A3e needs no
+# partition at all; it needs one neighbourhood per granule, and a disc states that literally.
+#
+# The disc is 2-D, pooling all seven z-planes, as A3d's squares are. The section is 9 um deep, so
+# this is a statement about the plane, which is the interpretable one.
+#
+# RADIUS. Area pi*5^2 = 78.5 um^2 is 21% TIGHTER than A3d's 100 um^2 square, so the locality claim
+# is at least as strong as A3d's, and it is a round number to state. Measured: granules are small
+# (median sphere_r 0.93 um WT / 0.95 AD, max 4.0) and residual RNA runs 3.3 / um^2 (WT) and
+# 2.3 / um^2 (AD), so the annulus left outside a median granule holds ~250 (WT) / ~174 (AD)
+# transcripts against the ~9 a granule contains. The ladder below is scored and reported before
+# anything is drawn, so the choice is checked against the data rather than asserted.
+PSEUDO_POOL_RADIUS = 5.0
+PSEUDO_POOL_RADIUS_LADDER = [4.0, 5.0, 6.0, 7.0]   # diagnostic only; reported, never used to draw
+
+# RETENTION. A granule is redrawn only if its own neighbourhood can actually supply the draw:
+#
+#     pool_size >= max(PSEUDO_MIN_POOL, k)        k = the granule's own transcript count
+#
+# The `k` half makes the without-replacement draw well defined -- without it a granule larger than
+# its own surroundings would have to be drawn WITH replacement, which is a different sampling
+# scheme applied to exactly the largest granules. `draw_local_ambient` asserts the rule rather than
+# falling back, so a violation stops the run instead of quietly changing the model.
+#
+# APPLIED TO EVERY ARM, not just `ambient`. Neighbourhood density plausibly predicts how
+# re-detectable a granule is, so restricting only the arm that draws from the pool would confound
+# `ambient` against `scramble` with local density. Granules that fail are labelled
+# `excluded_thin_pool` and reported beside `excluded_contaminated`; they are never folded into an
+# arm. Precedence when both apply: thin pool first.
+PSEUDO_MIN_POOL = 50
+
+# The residual layer already excludes EVERY granule's transcripts, which satisfies "excluding the
+# granule's own transcripts" more strongly than asked: a granule draws from RNA that no granule was
+# built from, its own included.
+#
+# Labels are drawn WITHOUT REPLACEMENT from the pool's actual label multiset -- the same
+# permutation spirit as the locked A3d null, and a physical statement ("these identities came from
+# real neighbouring ambient molecules") rather than a parametric one.
+#
+# THE POOL IS OVER ALL TARGETS -- 290 panel genes plus the Blank probes -- NOT A3d's 252 neutral
+# genes. Restricting to neutral genes would remove every marker from the pool and make
+# non-detection true by construction.
+PSEUDO_EXCLUDED_LABELS = ["excluded_thin_pool", "excluded_contaminated"]
+
+# --- what counts as "re-detected" -------------------------------------------------------------
+#
+# CREDIT FOLLOWS THE MOLECULES, NOT PROXIMITY. A purely geometric rule cannot distinguish "the
+# detector called this object again" from "the detector called something else nearby". That matters
+# here more than anywhere else in A3: 80% of granules are untouched and will certainly be called,
+# so a pseudo-granule whose contents were entirely replaced can still be credited to a neighbour.
+#
+# MEASURED, by matching the published granules against themselves -- every granule matches itself,
+# so a count > 1 means a DIFFERENT granule also satisfies the rule, i.e. the rate at which a
+# destroyed pseudo-granule would be scored re-detected for free:
+#
+#       criterion      WT       AD
+#       center_in     6.93%    8.20%     <- unusable as the primary
+#       intersect    33.91%   38.98%     <- barely an identity statement at all
+#       merge         0.34%    0.65%
+#
+# So the primary is PROVENANCE: a granule counts as re-detected when the re-run produced a sphere
+# containing at least PSEUDO_PROVENANCE_FRAC of THAT GRANULE'S OWN transcripts -- the granule-layer
+# transcripts assigned to it by a3_common.granule_members. Neighbour bleed goes to essentially zero
+# because the credit follows the actual molecules, and it states plainly in the response: the
+# detector rebuilt a sphere on the same transcripts.
+#
+# The three geometric rungs are mcDETECT's own predicates and are still scored and reported beside
+# it, so the answer can be read under every definition and cannot be an artefact of ours. The floor
+# table above is regenerated from data into a3e_match_floor.csv rather than trusted from this
+# comment.
+PSEUDO_MATCH_GEOMETRIC = ["center_in", "intersect", "merge"]
+PSEUDO_MATCH_CRITERIA = ["provenance"] + PSEUDO_MATCH_GEOMETRIC
+PSEUDO_MATCH_PRIMARY = "provenance"
+
+# Half of a granule's own transcripts. A recall statement about the object, not a threshold tuned
+# to a result: below 0.5 a sphere could be credited with two different granules at once, and at 0.5
+# it cannot.
+PSEUDO_PROVENANCE_FRAC = 0.5
+
+# THE LOAD-BEARING GATE. If the untouched arm is not re-detected at essentially 100%, no other
+# number in A3e means anything -- it would mean the re-run does not reproduce the published
+# pipeline, or that the perturbation did not stay local. A3a's Set-2 reproduction rebuilt 681,346
+# spheres against 681,337 published (a 9-sphere slack out of 681 K), and miniball is randomised at
+# the 1e-13 level, so the threshold is set just below 1 rather than at it.
+PSEUDO_CONTROL_MIN = 0.99
+
+# Published Set 2 was built with the 19-gene NC list (Gria2 included), so reproducing it uses that
+# list, not the 18-gene SET3_EXCLUDE one. Same policy as everywhere in A3: new detections use 18,
+# anything reproducing published data keeps the 19 it was built with.
+PSEUDO_NC_LIST = "published"
 
 # ============================================================ shared ============================================================ #
 
@@ -583,5 +808,6 @@ def transcript_layer_path(sample):
 
 
 def ensure_dirs():
-    for d in [PREFLIGHT_DIR, DETECT_DIR, A3A_DIR, A3B_DIR, A3C_DIR, FIG_DIR]:
+    for d in [PREFLIGHT_DIR, DETECT_DIR, A3A_DIR, A3B_DIR, A3C_DIR, A3D_DIR, A3E_DIR,
+              FIG_DIR]:
         d.mkdir(parents=True, exist_ok=True)

@@ -81,7 +81,7 @@ def load_spheres(method, sample, geneset, param=C.PARAM, max_spheres=None, seed=
 # Core: profile a sphere table
 # ----------------------------------------------------------------------------- #
 def profile_spheres(spheres, sample=None, transcripts=None, genes=None, marker_genes=None,
-                    nc_genes=None, chunk_size=C.CHUNK_SIZE, verbose=True):
+                    nc_genes=None, chunk_size=C.CHUNK_SIZE, verbose=True, buffer=0.0):
     """
     Count every transcript inside every sphere.
 
@@ -140,7 +140,11 @@ def profile_spheres(spheres, sample=None, transcripts=None, genes=None, marker_g
     centers = np.column_stack([spheres["sphere_x"].to_numpy(dtype=float),
                                spheres["sphere_y"].to_numpy(dtype=float),
                                layer_z])
-    radii = spheres["sphere_r"].to_numpy(dtype=float)
+    # sphere_r is the MINIMUM-ENCLOSING radius (miniball), so a cluster's own support
+    # points sit exactly ON the surface and a query at exactly sphere_r loses them to
+    # floating point. `buffer` defaults to 0.0 so existing callers (A1's cached feature
+    # tables and h5ad) are byte-identical; A3 passes a3_config.KG_BUFFER.
+    radii = spheres["sphere_r"].to_numpy(dtype=float) + float(buffer)
     n_sph = centers.shape[0]
 
     t0 = time.time()

@@ -19,6 +19,12 @@ touches, and **no** to the follow-up question of whether that association is org
 localization rather than co-expression; both halves are reported. A2d (promoting Fig. R9 to the
 supplement) needs no new computation and is superseded by A2a section 1.
 
+**A2e** covers the two per-sample results the response needs and the other three do not produce:
+the fraction of granules carrying ≥ 3 unique genes in **each** of MERSCOPE WT, MERSCOPE AD and
+Xenium 5K, and a direct test of whether granule content tracks the seeding marker's compartment
+category. Local, in a notebook, and independent of A2a, A2b and A2c — it reads only published
+artifacts.
+
 ---
 
 ## The column the reviewer's request hinges on
@@ -117,6 +123,7 @@ a2_common.py                 ported computation (subtyping, density, permutation
 
 A2a_multigene.ipynb          A2a end to end            [local, mcDETECT-env]
 A2c_cooccurrence.ipynb       A2c end to end            [local, mcDETECT-env]
+A2e_seed_content.ipynb       A2e end to end            [local, mcDETECT-env]
 run_permutation_detect.py    A2b stage 1, one permuted detection (10 tasks)  [HGCC, SLURM array]
 score_embedding.py           A2b stage 2, one COMBINED arm (6 tasks); --concat  [HGCC, array]
 slurm/run_permutation.sh     detection array wrapper
@@ -142,6 +149,9 @@ output/
 │   └── metrics/             per-arm + concatenated CSV/Parquet, t-SNE jpegs
 ├── a2c/                     pair + group enrichment, clustermap, groups tested/dropped,
 │                            go_abundance_stratified.csv
+├── a2e/                     marker inventory, per-sample complexity, same-category content,
+│                            seed × content table, chi-square / Fisher / permutation results,
+│                            the a-priori compartment collapse, granule-level companion
 └── figures/                 everything A2_figures.R draws
 ```
 
@@ -565,6 +575,12 @@ cat output/a2b/metrics/a2b_status.csv              # any series that was too sma
 
 #   transfer back only output/a2b/metrics/ -- small CSVs and jpegs, not the h5ad files
 
+# ---------- A2e: local, mcDETECT-env, run from this directory ----------
+#   Run All, once. No gates, no manual pause, nothing to fill in. ~6-9 min: most of it is
+#   loading the two h5ads and the 4,000 permutation replicates. The correctness gates always
+#   run, and the Xenium arm skips itself with a printed note if its outputs are absent.
+#   Independent of A2a/A2b/A2c.
+
 # ---------- figures: local ----------
 Rscript A2_figures.R
 
@@ -646,6 +662,11 @@ afterwards. Nothing in the document is typed by hand.
 | Co-occurrence block structure | `a2c/cooccurrence_clustermap.jpeg`, `a2c/clustermap_gene_order.csv` |
 | Permuted detections are somatic | `figures/a2b_in_soma_survival.jpeg`, `a2b/metrics/a2b_detection_summary.csv` |
 | Real vs permuted t-SNE | `a2b/metrics/tsne_matched_{real,perm}_seed0.jpeg` (equal n — use this pair), `tsne_real.jpeg` / `tsne_perm_seed*.jpeg` (full n) |
+| Granules are multi-gene **per sample**, incl. Xenium | `a2e/complexity_by_sample.csv` (WT / AD / Xenium, both NC conventions), `a2e/same_category_content.csv` (pure-subtype granules carrying a second marker of their own category) |
+| Content is not randomly distributed w.r.t. seed category | `a2e/seed_content_tests.csv` — the asymptotic chi-square **and** the 2,000-shuffle granule-label permutation side by side, with `design_effect` connecting them. `a2e/seed_content_table.csv` carries `fold_vs_expected` on all 16 cells, which is where the block structure is visible. Quote the **`nonseed_content`** arm whenever the merge confound is raised |
+| Content tracks the seed's **compartment** | `a2e/seed_content_compartment.csv` — the a-priori 2 × 2 collapse (`C.COMPARTMENT_OF`), carrying a chi-square (`chi2`, `chi2_neg_log10_p`, `cramers_v`), a two-sided Fisher's exact test on each diagonal cell (`odds_ratio`, `p`, `neg_log10_p`, `direction`) and a permutation p, so "Fisher's exact test on each diagonal cell" in Methods covers this table as well as the four-way one. **This is the table that tests the claim**, not the four-way diagonal; see the caveat below. `a2e/seed_content_granule_level.csv` is the granule-unit companion if the transcript-level p-value is challenged |
+| Per-category detail | `a2e/seed_content_diagonal.csv` — two-sided Fisher with a `direction` column and the permutation null band. Same-category enrichment holds for pre-syn and axons; post-syn and dendrites do **not** show it and the reason is anatomical, not a failure |
+| Denominators behind every A2e number | `a2e/marker_inventory.csv` — markers per category per platform, split into seed and non-seed. Xenium has 24 markers, two of them dendritic and two axonal; its fractions are **not** comparable to MERSCOPE's |
 
 Images are JPEG at dpi 500; convert to PNG before embedding in Word (the Adobe APP14 marker
 trips Word up).
@@ -662,7 +683,12 @@ identical per-gene totals — and, because of the size-matched arms, not merely 
 has fewer granules to work with. A2c shows the genes detection never touches are non-randomly
 co-detected: 33.9 % of non-seed pairs reach z > 2 against 2.5 % expected, 17.8 % survive
 Bonferroni, and the strongest pairs are interpretable modules. That is a direct answer to
-*"each granule essentially expresses just the single marker it was detected on"*.
+*"each granule essentially expresses just the single marker it was detected on"*. A2e adds the
+per-sample version of that answer — including Xenium 5K, which none of the other three touch — and
+shows that co-detected content is associated with the seeding marker's **compartment** — axonal
+vs somatodendritic — rather than distributed at random. That association is what
+`a2e/seed_content_compartment.csv` reports; the four-way diagonal is a finer split than the
+anatomy supports and is not the test.
 
 **Does not.** None of the three is a test of whether granules are biologically real — that burden
 sits with A3 (ambient / pseudo-granule controls) and the EM validation.
@@ -690,3 +716,42 @@ Three further caveats worth disclosing in Methods:
 - A2c's single strongest group, Axons, rests on **four** non-seed genes and six pairs. It is the
   one localization group that behaves as the design predicted, and it is too small to carry weight
   on its own.
+- A2e's `all_content` arm is partly manufactured by detection: `merge_sphere()` keeps one seed
+  marker of a merged pair and discards the other (`model.py:323-377`), and 8 of the 20 MERSCOPE
+  seeds are pre-syn, so a pre-syn-seeded granule carries a second pre-syn marker more often than
+  chance would give even with no biology. That is what the `nonseed_content` arm controls, and it
+  is the arm to quote. It is thin, though — 4 pre-syn, 8 post-syn, **1** dendritic (`Map2`) and
+  **1** axonal (`Ank3`) marker — so the last two rows carry a fold change, not independent support.
+- A2e's omnibus chi-square counts **transcripts**, which are not independent within a granule. The
+  size of that problem is measured rather than assumed: shuffling the seed-category label across
+  granules (which keeps each granule's whole content vector, so all within-granule dependence
+  survives) puts the null χ² at 17.2 against the asymptotic 9.0 — a **design effect of 1.9**, and
+  1.2 for `nonseed_content`. Correcting for it takes χ² from 206,412 to ~108,000, both far beyond
+  any threshold, and the observed statistic exceeds the largest of 2,000 null draws by 5,340×. It is
+  mild because the clusters are tiny: after removing each granule's own seed gene, granules carry a
+  mean of 2.36 marker transcripts (median 1; 32.5 % contribute none). Report the asymptotic and
+  permutation columns together — `seed_content_tests.csv` carries both — and quote
+  `seed_content_granule_level.csv` if the unit itself is disputed.
+- **A2e's four-way diagonal is not the frame in which the claim is testable, and reporting it alone
+  would look like two failures.** Same-category enrichment holds for pre-syn (1.33, and 1.67 with
+  seeds removed) and axons (2.60 / 2.54) but *not* for post-syn (0.69 / 0.90) or dendrites
+  (0.48 / 1.07). The reason is anatomical: the four marker sets are **two compartments split into
+  two overlapping labels each** — the postsynaptic density sits inside dendritic spines, and
+  presynaptic terminals are axonal structures — so `post-syn` and `dendrites` label one physical
+  compartment and cannot separate from each other. `seed_content_table.csv` shows the resulting
+  block structure directly (post-syn → dendrites 1.40, dendrites → post-syn 1.51). Collapsed to the
+  two compartments the association is clean and **identical in both arms** — axonal-content fold
+  1.405 and 1.395 — which is `seed_content_compartment.csv`. `C.COMPARTMENT_OF` is fixed a priori
+  from standard neuroanatomy and lives in `a2_config.py`, so "specified before the table was seen"
+  is checkable; present it that way, because presented as a regrouping it reads as p-hacking.
+- In a 2 × 2 the odds ratio is invariant to swapping both rows and columns, so **both diagonal rows
+  of `seed_content_compartment.csv` carry the same `odds_ratio` and the same Fisher `p`** — that is
+  arithmetic, not a duplicated record. The two compartments are told apart by `fold_enrichment`
+  (1.405 axonal vs 1.322 somatodendritic in `all_content`), which is a ratio of proportions and is
+  the number to quote. Never use the odds ratio and the fold interchangeably.
+- A2e's cleanest internal control sits in the `nonseed_content` arm, whose dendritic content is
+  **`Map2` alone**: it comes in at 0.27 × expected in pre-syn-seeded granules and 0.23 × in
+  axon-seeded ones. MAP2 is the canonical somatodendritic marker, actively excluded from axons.
+- A2e's Xenium arm uses a **24-marker** feature space, not 34: eleven of the 34 are off the Xenium
+  panel and `Snap25`, absent from MERSCOPE, is on it. Its seed list is also a different 16 markers,
+  not a subset of the MERSCOPE 20. Report Xenium beside MERSCOPE, never pooled with it.

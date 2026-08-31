@@ -206,7 +206,11 @@ def main(task_id):
     print(f"[{tag}] pre-merge spheres (raw): {len(flat):,}", flush=True)
 
     # The funnel, from the genuinely unfiltered per-gene output.
-    funnel = A3.funnel_counts(flat.rename(columns={"size_premerge": "size"}), by="seed_gene")
+    # genes= so a seed gene that formed NO sphere is reported as raw = 0 instead of being
+    # dropped: flatten_sphere_dict skips empty per-gene frames, and for a negative-control set a
+    # zero is the strongest row in the table.
+    funnel = A3.funnel_counts(flat.rename(columns={"size_premerge": "size"}), by="seed_gene",
+                              genes=genes)
     funnel.insert(0, "sample", sample)
     funnel.insert(0, "set", set_name)
     funnel.to_csv(out_dir / "funnel_by_gene.csv", index=False)

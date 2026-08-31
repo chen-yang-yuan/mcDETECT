@@ -34,6 +34,7 @@ A2A_READSTRATA_DIR = A2A_DIR / "readstrata"
 A2B_DIR = OUT_ROOT / "a2b"
 A2B_METRICS_DIR = A2B_DIR / "metrics"
 A2C_DIR = OUT_ROOT / "a2c"
+A2E_DIR = OUT_ROOT / "a2e"
 
 # ---------------------------------------------------------------------------------------------
 # Samples. Pair 1 only -- MERSCOPE_WT_2 / AD_2 do not enter this manuscript.
@@ -110,6 +111,27 @@ BENCHMARK_CLUSTERING_CSV = (
     MCDETECT_OUT_ROOT / "benchmark" / "benchmark_clustering" / "benchmark_clustering_results.csv"
 )
 
+# --- Xenium 5K, read-only, A2e only -----------------------------------------------------------
+# Xenium is deliberately NOT in SAMPLES: everything else in this module is pair-1 MERSCOPE, and
+# the two platforms do not share a panel, a seed list or a subtype feature space. Xenium enters
+# only as a third arm of the A2e complexity / same-category tables, never as a fourth A2b arm.
+#
+# Note the layout: Xenium's processed data sits directly under data/Xenium_5K/, with no
+# processed_data/ subdirectory, so data_dir() above does NOT apply to it.
+XENIUM_DATASET = "Xenium_5K"
+XENIUM_DATA_DIR = DATA_ROOT / XENIUM_DATASET
+XENIUM_NC = XENIUM_DATA_DIR / "negative_controls.csv"          # 293 rows, vs 19 for MERSCOPE
+XENIUM_GRANULE_ADATA = MCDETECT_OUT_ROOT / XENIUM_DATASET / "granule_adata_tsne.h5ad"
+XENIUM_SUBTYPE_LABELS = MCDETECT_OUT_ROOT / XENIUM_DATASET / "granule_subtype_labels.parquet"
+
+# The 16 markers Xenium seeds on -- a DIFFERENT list from SYN_GENES, not a subset of it.
+#                                     # from other_analysis/Xenium_5K/1_detection.ipynb cell 2
+# Only granules.parquet / granule_adata_tsne.h5ad retain per-granule seed identity. The
+# *_merged_genes* variants in the same directory carry gene == "merged" on every row and are
+# useless for anything keyed on the seed marker.
+XENIUM_SYN_GENES = ["Snap25", "Camk2a", "Slc17a7", "Cyfip2", "Map2", "Syp", "Syn1", "Slc32a1",
+                    "Vamp2", "Mapt", "Gria2", "Gap43", "Tubb3", "Dlg4", "Gria1", "Bsn"]
+
 
 # ============================================================ gene sets ============================================================ #
 
@@ -133,6 +155,68 @@ REF_GENES = ["Bsn", "Gap43", "Nrxn1", "Slc17a6", "Slc17a7", "Slc32a1", "Stx1a", 
              "Syt1", "Vamp2", "Cplx2", "Camk2a", "Dlg3", "Dlg4", "Gphn", "Gria1", "Gria2",
              "Homer1", "Homer2", "Nlgn1", "Nlgn2", "Nlgn3", "Shank1", "Shank3", "Cyfip2", "Ddn",
              "Map1a", "Map2", "Ank3", "Nav1", "Nfasc", "Mapt", "Tubb3"]
+
+
+def marker_category_map(available=None):
+    """gene -> compartment category, for the subtype markers only.
+
+    MARKER_GENES lists `Dlg4` twice -- under post-syn and under dendrites -- so a naive inversion
+    of that dict is ambiguous. First match over MARKER_GENES key order resolves it to post-syn,
+    which is where REF_GENES' column order also groups it, so this map reproduces exactly the
+    grouping the published subtype heatmap draws rather than inventing a convention.
+
+    `available = None` gives the MERSCOPE 34: pre-syn 12, post-syn 13, dendrites 4, axons 5.
+    Otherwise the map is restricted to genes the panel actually carries, and `Snap25` -- in
+    MARKER_GENES but off the MERSCOPE panel, hence absent from REF_GENES -- is admitted if
+    present. A Xenium var index therefore yields its 24-gene feature space: 11 of the 34 are
+    off-panel there and Snap25 takes the count from 23 back to 24.
+    """
+    if available is None:
+        genes = list(REF_GENES)
+    else:
+        available = set(available)
+        genes = [g for g in list(REF_GENES) + ["Snap25"] if g in available]
+
+    gene_to_cat = {}
+    for gene in genes:
+        for category, members in MARKER_GENES.items():
+            if gene in members:
+                gene_to_cat[gene] = category
+                break
+    return gene_to_cat
+
+
+# --- A2e ---------------------------------------------------------------------------------------
+# `axons` is empty in every published cluster -> subtype mapping (benchmark_subtyping.ipynb cell
+# 21 and other_analysis/Xenium_5K/2_subtyping.ipynb cell 10 both send it to []), and no
+# axon-containing label exists in either subtype parquet. So the pure-subtype loop is three
+# categories. That is a fact about the K-means clusters and says nothing about the SEED axis,
+# which keeps all four.
+PURE_SUBTYPES = ["pre-syn", "post-syn", "dendrites"]
+CONTENT_CATEGORIES = ["pre-syn", "post-syn", "dendrites", "axons"]
+
+# The four marker sets are not four compartments -- they are TWO anatomical compartments, each
+# split into two overlapping labels. Presynaptic terminals are axonal structures, and the
+# postsynaptic density sits inside dendritic spines (Camk2a, Dlg4, Shank, Homer and Gria are PSD
+# proteins on a dendritic structure; Map2, Cyfip2, Ddn and Map1a are dendritic shaft markers).
+# Asking a sub-label to separate from the compartment it physically lives in is not a test the data
+# can pass, so the compartment collapse is where same-category association is actually testable.
+#
+# Fixed a priori from standard neuroanatomy -- NOT a regrouping chosen after inspecting any table.
+# It lives here beside MARKER_GENES, rather than in the notebook, so that claim is checkable.
+COMPARTMENT_OF = {"pre-syn": "axonal", "axons": "axonal",
+                  "post-syn": "dendritic", "dendrites": "dendritic"}
+COMPARTMENTS = ["axonal", "dendritic"]
+
+# Complexity thresholds reported per sample; 3 is the headline and matches MIN_UNIQUE_GENES.
+A2E_COMPLEXITY_LEVELS = [2, 3, 4]
+
+# A2e runs the seed-category test twice. `all_content` is the analysis as specified -- remove only
+# the granule's own seed gene. `nonseed_content` additionally removes every seed marker, because
+# merge_sphere() keeps one marker of a merged pair and discards the other (model.py:323-377), and
+# 8 of the 20 MERSCOPE seeds are pre-syn: a pre-syn-seeded granule is therefore likelier to carry
+# a second pre-syn marker by construction. Only `nonseed_content` is immune to that.
+A2E_CONTENT_ARMS = ["all_content", "nonseed_content"]
 
 
 # ============================================================ A2a ============================================================ #
@@ -402,5 +486,6 @@ def resolve_n_jobs(n_jobs=None):
 
 
 def ensure_dirs():
-    for d in [A2A_MULTIGENE_DIR, A2A_READSTRATA_DIR, A2B_DIR, A2B_METRICS_DIR, A2C_DIR]:
+    for d in [A2A_MULTIGENE_DIR, A2A_READSTRATA_DIR, A2B_DIR, A2B_METRICS_DIR, A2C_DIR,
+              A2E_DIR]:
         d.mkdir(parents=True, exist_ok=True)

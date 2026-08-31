@@ -3,24 +3,29 @@
 #
 # Reviewer #2, major point 9. Section numbers match the notebooks 1:1:
 #
-#   [1]-[6]   A3a_three_sets.ipynb      preflight / NC forensics / sets / overlap / density / stage D
-#   [7]-[8]   A3b_vicinity.ipynb        placement + profiles / the detection predicate
-#   [9]-[10]  A3c_de_baseline.ipynb     Axis 1 (compartment) / Axis 2 (conditions and regions)
+#   [1]-[3]  A3a_three_sets.ipynb      set funnels / overlap ladder / per-region density
+#   [4]      A3b_vicinity.ipynb        the detection predicate
+#   [5]-[6]  A3c_de_baseline.ipynb     Axis 1, the compartment contrast
+#   [7]      A3d_local_null.ipynb      the 10 um local-sampling null
+#
+# SEVEN FIGURES, and every one is placed in the response letter. Panels that were drawn but never
+# cited -- the reciprocal-overlap bars, the vicinity-overlap map, the marker-count histogram, the
+# Axis-1 residual violin and both Axis-2 panels -- have been removed. The Axis-2 ANALYSIS still
+# runs and still writes its CSVs; it is simply not in the letter.
 #
 # This script reads CSV and Parquet ONLY. R cannot open an .h5ad, so anything plotted here was
 # pre-exported by the Python side -- distributions arrive as a `*_summary.csv` + `*_histogram.parquet`
 # pair (bin counts and quantiles), never as millions of raw values.
 #
-# WHERE THE ARGUMENT LIVES. Section [8] is the load-bearing panel: the fraction of vicinity
+# WHERE THE ARGUMENT LIVES. Section [5] is the load-bearing panel: the fraction of vicinity
 # pseudo-granules that would have been DETECTED, as a function of offset distance, against the real
-# granules as a ceiling and tissue-wide random locations as the floor. Sections [3] and [7] contain
+# granules as a ceiling and tissue-wide random locations as the floor. Section [4] contains
 # comparisons that are partly pre-ordained by the geometry (a matched-radius sphere cannot capture
-# more than the minimum enclosing sphere it was copied from) -- they are description, not evidence.
+# more than the minimum enclosing sphere it was copied from) -- description, not evidence.
 #
-# READ [6] WITH CARE. The adaptive-threshold survival is ONE-SIDED: it can only remove granules,
-# never add ones the global threshold missed. It bounds false-positive inflation and is silent on
-# false negatives in low-density regions -- and AD is the lower-density arm. The caveat text ships
-# alongside in adaptive_caveats.csv and belongs in any figure legend drawn from that panel.
+# NOTHING IS DRAWN THAT IS NOT PLACED IN THE RESPONSE. Panels that existed only as an internal
+# record -- the CSR/z-coverage preflight, the NC-filter forensics, the adaptive-threshold survival
+# -- have been removed along with the analyses behind them.
 #
 # Every section is independently toggleable. Missing inputs degrade to a [skip] message rather than
 # an error, so a partial run still produces every figure it can.
@@ -38,32 +43,32 @@ suppressPackageStartupMessages({
 here::i_am("R2_revision/ambient_controls/A3_figures.R")
 
 # -------------------- section toggles -------------------- #
-RUN_PREFLIGHT <- TRUE    # 1. CSR min_samples table + z-plane profile
-RUN_NC        <- TRUE    # 2. NC-filter forensics: corrected ratio, leave-one-out, Gria2
-RUN_SETS      <- TRUE    # 3. set inventory + funnels, raw and per-million-transcript
-RUN_OVERLAP   <- TRUE    # 4. the overlap ladder, observed vs expected
-RUN_DENSITY   <- TRUE    # 5. per-region density per set, WT vs AD
-RUN_ADAPTIVE  <- TRUE    # 6. locally-adaptive threshold survival curves
-RUN_VICINITY  <- TRUE    # 7. placement acceptance + real-vs-pseudo distributions
-RUN_PREDICATE <- TRUE    # 8. THE detection-predicate curve
-RUN_AXIS1     <- TRUE    # 9. compartment: baseline vs granule enrichment
-RUN_AXIS2     <- TRUE    # 10. conditions and regions
+# One panel per claim, and nothing else. Every figure below is placed in the response; a panel
+# that is not is a panel that gets cut in review, so it is not drawn here.
+RUN_SETS      <- TRUE    # 1. funnels, per million transcripts of the seeding gene
+RUN_OVERLAP   <- TRUE    # 2. the overlap ladder, granule side, both controls
+RUN_DENSITY   <- TRUE    # 3. per-region density per set, WT vs AD
+RUN_PREDICATE <- TRUE    # 4. THE detection-predicate curve
+RUN_AXIS1     <- TRUE    # 5. compartment: baseline vs granule enrichment
+RUN_NONSEED   <- TRUE    # 6. THE non-circular panel: genes that seeded nothing
+RUN_LOCALNULL <- TRUE    # 7. THE local-sampling null: is a granule a random draw locally?
+RUN_PSEUDO    <- TRUE    # 8. THE pseudo-granule re-detection: build the hypothesis, feed it back
 
 dpi <- 500
 
 # -------------------- paths -------------------- #
 root    <- here::here("R2_revision/ambient_controls/output")
-pre_dir <- file.path(root, "preflight")
 a3a_dir <- file.path(root, "a3a")
 a3b_dir <- file.path(root, "a3b")
 a3c_dir <- file.path(root, "a3c")
+a3d_dir <- file.path(root, "a3d")
+a3e_dir <- file.path(root, "a3e")
 fig_dir <- file.path(root, "figures")
 dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
 
 # -------------------- palette and shared helpers -------------------- #
 fill_colors <- c(WT = "#a0ccec", AD = "#f48488")     # a3_config.py holds the same two hex values
 set_colors  <- c(set0 = "#b6b6b6", set1 = "#7fb069", set2 = "#4f7fa8", set3 = "#d98b5f")
-hist_outline <- "#e9ecef"
 area_order <- c("Isocortex", "OLF", "HPF-CA", "HPF-DG", "HPF-SR", "CTXsp", "TH", "MB", "FT")
 
 need <- function(path, section) {
@@ -76,165 +81,36 @@ save_fig <- function(p, name, width, height) {
   message("  wrote ", name)
 }
 
-# One standalone binned-histogram panel, shared by every distribution section so they cannot
-# drift apart visually.
-binned_hist <- function(df, out_file, x_lab, fill_var = "sample", palette = NULL,
-                        facet = NULL, caption = NULL, width = 7, height = 4.5) {
-  p <- ggplot(df, aes(x = bin_lo, y = frac, fill = .data[[fill_var]])) +
-    geom_col(width = df$bin_hi[1] - df$bin_lo[1], colour = hist_outline, linewidth = 0.1,
-             position = "identity", alpha = 0.65) +
-    labs(x = x_lab, y = "fraction", fill = NULL, caption = caption) +
-    theme_classic() +
-    theme(axis.text = element_text(size = 12), axis.title = element_text(size = 13),
-          legend.position = "bottom",
-          plot.caption = element_text(hjust = 0, size = 9, colour = "grey30"))
-  pal <- if (!is.null(palette)) palette else
-    if (all(df[[fill_var]] %in% names(fill_colors))) fill_colors else NULL
-  if (!is.null(pal)) p <- p + scale_fill_manual(values = pal)
-  if (!is.null(facet)) p <- p + facet_wrap(as.formula(paste("~", facet)))
-  save_fig(p, out_file, width, height)
-}
-
-
 # ==============================================================================================
-# 1. Pre-flight -- the CSR disclosure and the flagged z-coverage issue
+# 1. The sets, as funnels
 # ==============================================================================================
 #
-# The CSR panel is the evidence for one sentence in the response: code/3_detection.py passes
-# minspl=3, so poisson_select never runs on real data, and at alpha = 0.5 that rule returns
-# exactly 3 for every marker in both samples. Plotting min_samples against alpha makes both halves
-# visible at once -- that alpha = 10 (the inert value in the call) would have been far stricter,
-# and that alpha = 0.5 reproduces what was used.
-#
-# The z panel is the KNOWN ISSUE flagged in README.md and deliberately NOT investigated by A3: the
-# AD section thins with depth while WT is flat. It is drawn so the number is on record.
-
-if (RUN_PREFLIGHT) {
-  message("[1] pre-flight")
-
-  f <- file.path(pre_dir, "csr_min_samples.csv")
-  if (need(f, "1")) {
-    csr <- read.csv(f) %>% filter(gene_set %in% c("marker", "nc"))
-    p <- ggplot(csr, aes(x = alpha, y = min_samples, group = gene, colour = gene_set)) +
-      geom_line(alpha = 0.5) + geom_point(size = 0.8, alpha = 0.7) +
-      geom_hline(yintercept = 3, linetype = "dashed", colour = "black") +
-      geom_vline(xintercept = 0.5, linetype = "dotted", colour = "#4f7fa8") +
-      facet_wrap(~ sample) +
-      scale_x_log10() + scale_y_log10() +
-      scale_colour_manual(values = c(marker = "#4f7fa8", nc = "#d98b5f")) +
-      labs(x = expression(alpha), y = "min_samples returned by poisson_select",
-           colour = NULL,
-           caption = paste("dashed = the value actually used (3); dotted = alpha 0.5,",
-                           "at which the CSR rule returns 3 for every marker")) +
-      theme_bw() + theme(legend.position = "bottom",
-                         plot.caption = element_text(hjust = 0, size = 9, colour = "grey30"))
-    save_fig(p, "a3a_csr_min_samples.jpeg", 8, 4.5)
-  }
-
-  zf <- list.files(pre_dir, pattern = "^z_profile_.*\\.csv$", full.names = TRUE)
-  if (length(zf)) {
-    z <- do.call(rbind, lapply(zf, read.csv))
-    zl <- z %>%
-      pivot_longer(c(n_tx, n_granules), names_to = "measure", values_to = "n") %>%
-      group_by(sample, measure) %>% mutate(frac = n / sum(n, na.rm = TRUE)) %>% ungroup()
-    p <- ggplot(zl, aes(x = z, y = frac, colour = sample)) +
-      geom_line(linewidth = 0.9) + geom_point(size = 1.8) +
-      facet_wrap(~ measure, scales = "free_y") +
-      scale_colour_manual(values = fill_colors) +
-      labs(x = "z plane (um)", y = "fraction of total", colour = NULL,
-           caption = paste("KNOWN ISSUE, flagged not investigated: the AD section thins with",
-                           "depth while WT is flat, so granule counts follow.")) +
-      theme_bw() + theme(legend.position = "bottom",
-                         plot.caption = element_text(hjust = 0, size = 9, colour = "grey30"))
-    save_fig(p, "a3a_z_coverage.jpeg", 8, 4)
-  } else message("  [skip 1] no z_profile_*.csv")
-}
-
-
-# ==============================================================================================
-# 2. What the NC filter actually does
-# ==============================================================================================
-#
-# Three panels, all pre-emptive: a reviewer reading model.py can find every one of these.
-#   2a  nc_ratio pairs a post-merge numerator with a pre-merge denominator (`size` is never
-#       recomputed by _remove_overlaps), inflating it for the multi-marker granules
-#   2b  the NC list is not gene-neutral -- leave-one-out (over the 18-gene list, since Set 1 is a
-#       newly detected population) shows which genes carry the filtering
-#   2c  Gria2 is on BOTH lists, so Gria2-seeded granules self-filter
-
-if (RUN_NC) {
-  message("[2] NC-filter forensics")
-
-  f <- file.path(a3a_dir, "nc_leave_one_out.csv")
-  if (need(f, "2")) {
-    loo <- read.csv(f)
-    p <- ggplot(loo, aes(x = reorder(nc_gene, n_removed), y = n_removed, fill = sample)) +
-      geom_col(position = "dodge") + coord_flip() +
-      scale_fill_manual(values = fill_colors) +
-      scale_y_continuous(labels = comma) +
-      labs(x = NULL, y = "Set-1 granules removed by this NC gene alone", fill = NULL,
-           caption = paste("The NC list spans complement (C4a), AD risk (Abca7), an",
-                           "oligodendrocyte gene (Opalin) and three dentate-gyrus genes,\nso its",
-                           "background is itself spatially structured -- the reviewer's own",
-                           "concern applied to our filter.")) +
-      theme_bw() + theme(legend.position = "bottom",
-                         plot.caption = element_text(hjust = 0, size = 9, colour = "grey30"))
-    save_fig(p, "a3a_nc_leave_one_out.jpeg", 7.5, 6)
-  }
-
-  f <- file.path(a3a_dir, "gria2_partition.csv")
-  if (need(f, "2")) {
-    g <- read.csv(f) %>%
-      select(sample, n_removed_gria2, n_removed_other) %>%
-      pivot_longer(-sample, names_to = "component", values_to = "n") %>%
-      mutate(component = recode(component,
-                                n_removed_gria2 = "seeded on Gria2 (list collision)",
-                                n_removed_other = "dropped for nc_ratio >= 0.1"))
-    p <- ggplot(g, aes(x = sample, y = n, fill = component)) +
-      geom_col() + scale_y_continuous(labels = comma) +
-      scale_fill_manual(values = c("seeded on Gria2 (list collision)" = "#d98b5f",
-                                   "dropped for nc_ratio >= 0.1" = "#4f7fa8")) +
-      labs(x = NULL, y = "granules removed (Set 1 -> Set 2)", fill = NULL,
-           caption = paste("Gria2 is on both the marker list and the NC list, so nc_filter counts",
-                           "it in the numerator and `size` counts it\nin the denominator. The",
-                           "collision makes Set 2 CONSERVATIVE -- Gria2 is a canonical",
-                           "dendritically transported transcript.")) +
-      theme_bw() + theme(legend.position = "bottom",
-                         plot.caption = element_text(hjust = 0, size = 9, colour = "grey30"))
-    save_fig(p, "a3a_gria2_partition.jpeg", 7, 5)
-  }
-}
-
-
-# ==============================================================================================
-# 3. The sets, as funnels
-# ==============================================================================================
-#
-# Endpoints alone would be circular for Set 3: the NC genes are DEFINED as nuclear-enriched, so
-# "few survive the in-soma filter" proves nothing. The funnel shows WHERE each set empties, and the
-# per-million-transcript rate removes the 15x abundance gap that would otherwise explain an empty
-# Set 3 for free. Set 0 -- neutral genes at marker abundance -- is the arm that makes the point.
+# Rate, not count, and a funnel, not an endpoint. The control genes are ~15x rarer than the
+# markers and DBSCAN yield is superlinear in count, so a raw comparison would be an abundance
+# comparison; Set 0 -- unannotated genes at marker abundance -- is the arm that closes that off.
+# The funnel also makes visible WHERE each population thins, which for Set 3 is the whole point:
+# soma-restricted transcripts aggregate mostly inside somata, and it is the extrasomatic residue
+# that this analysis counts.
 
 if (RUN_SETS) {
-  message("[3] set funnels")
+  message("[1] set funnels")
 
   f <- file.path(a3a_dir, "funnel_by_gene.csv")
-  if (need(f, "3")) {
+  if (need(f, "1")) {
     fun <- read.csv(f)
+    # raw/size/in_soma are counted PER SEED GENE (the input to merge_sphere), so an aggregate
+    # detected on several markers is counted several times. set_inventory.csv holds the merged
+    # count, which is the population every later section uses; it is the funnel's last stage.
+    finv <- file.path(a3a_dir, "set_inventory.csv")
+    if (!need(finv, "1")) return(invisible(NULL))
+    merged <- read.csv(finv) %>% select(set, sample, merged = n_spheres)
     agg <- fun %>%
       group_by(set, sample) %>%
       summarise(across(c(raw, size, in_soma, n_tx_gene), sum), .groups = "drop") %>%
-      pivot_longer(c(raw, size, in_soma), names_to = "stage", values_to = "n") %>%
-      mutate(stage = factor(stage, levels = c("raw", "size", "in_soma")),
+      left_join(merged, by = c("set", "sample")) %>%
+      pivot_longer(c(raw, size, in_soma, merged), names_to = "stage", values_to = "n") %>%
+      mutate(stage = factor(stage, levels = c("raw", "size", "in_soma", "merged")),
              rate = n / (n_tx_gene / 1e6))
-
-    p <- ggplot(agg, aes(x = stage, y = n, colour = set, group = set)) +
-      geom_line(linewidth = 0.9) + geom_point(size = 2.2) +
-      facet_wrap(~ sample) + scale_y_log10(labels = comma) +
-      scale_colour_manual(values = set_colors) +
-      labs(x = NULL, y = "spheres surviving (log)", colour = NULL) +
-      theme_bw() + theme(legend.position = "bottom")
-    save_fig(p, "a3a_funnel_counts.jpeg", 8, 4.5)
 
     p <- ggplot(agg, aes(x = stage, y = rate, colour = set, group = set)) +
       geom_line(linewidth = 0.9) + geom_point(size = 2.2) +
@@ -244,7 +120,9 @@ if (RUN_SETS) {
            colour = NULL,
            caption = paste("Rate, not count: the NC genes are ~15x rarer than the markers and",
                            "DBSCAN yield is superlinear in count,\nso a raw comparison would be",
-                           "an abundance comparison. Set 0 is abundance-matched to the markers.")) +
+                           "an abundance comparison. Set 0 is abundance-matched to the markers.",
+                           "The first three\nstages are counted per seed gene; `merged` is after",
+                           "cross-gene merging and is the population used downstream.")) +
       theme_bw() + theme(legend.position = "bottom",
                          plot.caption = element_text(hjust = 0, size = 9, colour = "grey30"))
     save_fig(p, "a3a_funnel_rates.jpeg", 8, 5)
@@ -253,52 +131,64 @@ if (RUN_SETS) {
 
 
 # ==============================================================================================
-# 4. The overlap ladder
+# 2. The overlap ladder
 # ==============================================================================================
 #
 # `intersect` (d < r_A + r_B) leads because it is the LOOSEST criterion and therefore maximises
 # apparent overlap -- a small value under it cannot be argued with. mcDETECT's own merge predicate
 # requires centres within 0.4*r and would understate co-location badly if quoted alone.
-# Observed/expected is against Set-3 spheres re-placed uniformly in the tissue mask.
+#
+# ONE DIRECTION ONLY: the share of GRANULES meeting a control aggregate. That is what bounds
+# contamination of the published result, and the Set1 -> Set2 fall in it -- which steepens as the
+# criterion tightens -- is the evidence that the NC filter works. The reciprocal share and the
+# re-placement null stay in overlap_ladder.csv but are not drawn; see the editorial note in
+# section 1.3 of the response document. Set 0 and Set 3 are drawn side by side throughout.
 
 if (RUN_OVERLAP) {
-  message("[4] overlap ladder")
+  message("[2] overlap ladder")
 
   f <- file.path(a3a_dir, "overlap_ladder.csv")
-  if (need(f, "4")) {
+  if (need(f, "2")) {
     ov <- read.csv(f) %>%
-      mutate(criterion = factor(criterion, levels = c("intersect", "center_in", "merge")))
+      mutate(criterion = factor(criterion, levels = c("intersect", "center_in", "merge")),
+             base = factor(base, levels = c("set1", "set2"),
+                           labels = c("Set 1 (before NC filter)", "Set 2 (published)")),
+             control = factor(control, levels = c("set0", "set3"),
+                              labels = c("Set 0 (abundance-matched)",
+                                         "Set 3 (nuclear-enriched)")))
+
     p <- ggplot(ov, aes(x = criterion, y = frac_overlapping, fill = sample)) +
       geom_col(position = "dodge") +
-      geom_errorbar(aes(ymin = expected_frac - null_sd, ymax = expected_frac + null_sd),
-                    position = position_dodge(width = 0.9), width = 0.25, colour = "grey30") +
-      geom_point(aes(y = expected_frac), position = position_dodge(width = 0.9),
-                 shape = 4, size = 2, colour = "grey20") +
-      facet_wrap(~ base) + scale_fill_manual(values = fill_colors) +
-      labs(x = NULL, y = "fraction of granules overlapping a Set-3 sphere", fill = NULL,
-           caption = paste("x = expected under Set-3 spheres re-placed uniformly in the tissue",
-                           "mask at matched radius and layer_z.\n`intersect` is the loosest",
-                           "criterion and is reported first on purpose.")) +
+      facet_grid(control ~ base, scales = "free_y") +
+      scale_fill_manual(values = fill_colors) +
+      labs(x = NULL, y = "fraction of granules meeting a control aggregate", fill = NULL,
+           caption = paste("`intersect` (spheres touch at all) is the loosest criterion and is",
+                           "drawn first on purpose; `merge` is mcDETECT's own\nmerge predicate,",
+                           "i.e. the criterion under which the detector would have combined the",
+                           "two objects. Free y-axis per row.")) +
       theme_bw() + theme(legend.position = "bottom",
                          plot.caption = element_text(hjust = 0, size = 9, colour = "grey30"))
-    save_fig(p, "a3a_overlap_ladder.jpeg", 8, 5)
+    save_fig(p, "a3a_overlap_ladder.jpeg", 9, 7)
+
   }
 }
 
 
 # ==============================================================================================
-# 5. Per-region density per set, WT vs AD
+# 3. Per-region density per set, WT vs AD
 # ==============================================================================================
 #
-# The advisor's expectation: Set-3 (negative-control) pseudo-granules show NO WT/AD difference.
+# The claim: neither control population reproduces the granules' regional WT/AD pattern. Set 1 is
+# the built-in positive control for that statistic -- it is Set 2 minus one filter, so if the
+# per-region AD/WT ratio profile is recoverable at all, Set 1 must recover it.
 # n = 1 vs 1, so this is descriptive -- and the capture-efficiency coefficient is a single global
 # scalar whose per-region spread is reported beside it.
 
 if (RUN_DENSITY) {
-  message("[5] per-region density")
+  message("[3] per-region density")
 
   f <- file.path(a3a_dir, "set_density_per_region.csv")
-  if (need(f, "5")) {
+  if (need(f, "3")) {
     d <- read.csv(f)
     # subtype_density_per_region emits BOTH an "all" row and an identical "overall" row per
     # (area, sample); without this filter position="dodge" stacks the pair and every bar is
@@ -325,92 +215,7 @@ if (RUN_DENSITY) {
 
 
 # ==============================================================================================
-# 6. Stage D -- locally-adaptive threshold survival
-# ==============================================================================================
-#
-# READ THIS PANEL WITH THE CAVEAT ATTACHED. The test is one-sided: it re-applies a locally
-# estimated min_samples to already-called granules, so it can only REMOVE them. It bounds
-# false-positive inflation where background is denser -- which is exactly the reviewer's stated
-# failure mode -- and says nothing about false negatives in sparse regions. AD is the lower-density
-# arm, so the silent direction works against our own effect.
-#
-# The deliverable is not "X% survive" but whether the WT/AD result holds on survivors, plus the
-# survival rate per sample: a DIFFERENTIAL survival rate between WT and AD would be the reviewer's
-# hypothesis confirmed, and it is better reported by us than found by them.
-
-if (RUN_ADAPTIVE) {
-  message("[6] adaptive-threshold survival")
-
-  f <- file.path(a3a_dir, "adaptive_survival.csv")
-  if (need(f, "6")) {
-    s <- read.csv(f)
-    cav <- file.path(a3a_dir, "adaptive_caveats.csv")
-    cap <- if (file.exists(cav)) paste(strwrap(read.csv(cav)$caveat[1], 110), collapse = "\n")
-           else "One-sided: this test can only remove granules, never add them."
-
-    p <- ggplot(s, aes(x = alpha, y = frac_survive, colour = sample,
-                       linetype = factor(exclude_granule_tx))) +
-      geom_line(linewidth = 0.9) + geom_point(size = 1.8) +
-      facet_grid(k_variant ~ R, labeller = label_both) +
-      scale_x_log10() + scale_y_continuous(limits = c(0, 1)) +
-      scale_colour_manual(values = fill_colors) +
-      labs(x = expression(alpha), y = "fraction of granules surviving",
-           colour = NULL, linetype = "granule tx excluded", caption = cap) +
-      theme_bw() + theme(legend.position = "bottom",
-                         plot.caption = element_text(hjust = 0, size = 8, colour = "grey30"))
-    save_fig(p, "a3a_adaptive_survival.jpeg", 10, 6.5)
-  }
-}
-
-
-# ==============================================================================================
-# 7. A3b -- placement and real-vs-pseudo distributions
-# ==============================================================================================
-#
-# DESCRIPTION, NOT EVIDENCE. A matched-radius count comparison is an algebraic identity: sphere_r is
-# the minimum enclosing radius of the exact DBSCAN core points, so the real sphere is maximally
-# dense by construction and any displaced copy must capture no more. What is informative here is
-# the SHAPE of the gap and the filter funnel, plus the fraction of offsets that land on a real
-# granule -- which measures how much of the immediate vicinity is already called.
-
-if (RUN_VICINITY) {
-  message("[7] vicinity placement + profiles")
-
-  f <- file.path(a3b_dir, "vicinity_overlap_with_real.csv")
-  if (need(f, "7")) {
-    ov <- read.csv(f) %>% mutate(d = paste0(d_kind, ":", d_label))
-    p <- ggplot(ov, aes(x = reorder(d, frac_on_real_granule), y = frac_on_real_granule,
-                        fill = sample)) +
-      geom_col(position = "dodge") + coord_flip() +
-      scale_fill_manual(values = fill_colors) +
-      labs(x = "offset", y = "fraction of offsets landing on a real granule", fill = NULL,
-           caption = paste("A result, not a nuisance: this is how much of the immediate vicinity",
-                           "is already called.\nPer-plane granule coverage is only ~1.9% (WT) /",
-                           "1.5% (AD), which is why rejecting overlaps barely biases the sample.")) +
-      theme_bw() + theme(legend.position = "bottom",
-                         plot.caption = element_text(hjust = 0, size = 9, colour = "grey30"))
-    save_fig(p, "a3b_vicinity_overlap.jpeg", 7.5, 5)
-  }
-
-  f <- file.path(a3b_dir, "profile_histogram.parquet")
-  if (need(f, "7")) {
-    h <- read_parquet(f) %>% filter(measure == "n_marker")
-    h$kind <- ifelse(grepl("^real", h$arm), "real", "pseudo")
-    hh <- h %>% group_by(sample, kind, bin_lo, bin_hi) %>%
-      summarise(frac = mean(frac), .groups = "drop") %>% filter(is.finite(bin_hi))
-    binned_hist(hh, "a3b_marker_counts.jpeg",
-                x_lab = "marker transcripts inside the sphere", fill_var = "kind",
-                palette = c(real = "#4f7fa8", pseudo = "#d98b5f"), facet = "sample",
-                caption = paste("Descriptive only: a matched-radius displaced copy of a minimum",
-                                "enclosing sphere must capture no more.\nThe decision is",
-                                "section 8."),
-                width = 8, height = 4.5)
-  }
-}
-
-
-# ==============================================================================================
-# 8. A3b -- THE detection predicate
+# 4. A3b -- THE detection predicate
 # ==============================================================================================
 #
 # This is the panel the response rests on. For each pseudo-granule: would DBSCAN(eps=1.5,
@@ -424,10 +229,10 @@ if (RUN_VICINITY) {
 # asymptote right next to a real granule = it does not, and that is his hypothesis confirmed.
 
 if (RUN_PREDICATE) {
-  message("[8] detection predicate")
+  message("[4] detection predicate")
 
   f <- file.path(a3b_dir, "detection_predicate.csv")
-  if (need(f, "8")) {
+  if (need(f, "4")) {
     pr <- read.csv(f)
     ref <- pr %>% filter(arm %in% c("real", "random_tissue"))
     cur <- pr %>% filter(!arm %in% c("real", "random_tissue")) %>%
@@ -454,7 +259,7 @@ if (RUN_PREDICATE) {
   }
 
   f <- file.path(a3b_dir, "detection_predicate_stratified.csv")
-  if (need(f, "8")) {
+  if (need(f, "4")) {
     st <- read.csv(f)
     if ("density_quintile" %in% names(st)) {
       sq <- st %>% filter(!is.na(density_quintile)) %>%
@@ -476,27 +281,39 @@ if (RUN_PREDICATE) {
 
 
 # ==============================================================================================
-# 9. A3c -- Axis 1, the compartment contrast
+# 5. A3c -- Axis 1, the compartment contrast
 # ==============================================================================================
 #
 # The reviewer's literal ask: DE between somatic and all non-somatic RNA, independent of granule
 # detection, then whether the granule-specific differences exceed or DIVERGE FROM that baseline.
 #
 # The scatter is lifted from code/figures_response.Rmd:1424-1452 (which already sits under a
-# heading titled "Reviewer 2, Major Comment 9") with two changes: the baseline is now
-# granule-FREE -- residual extrasomatic vs soma, so it no longer contains the signal it is a null
-# for -- and granule enrichment now uses the SAME soma reference, so the two axes share a
-# denominator and their difference is meaningful.
+# heading titled "Reviewer 2, Major Comment 9") with two changes. (1) Granule enrichment now uses
+# the SAME soma reference as the baseline, so the two axes share a denominator and their
+# difference is meaningful -- and the soma term then cancels exactly out of `delta`, leaving
+# granule vs extrasomatic. (2) The baseline plotted is `baseline_all_logFC`, ALL non-somatic RNA
+# (granule + residual extrasomatic) vs soma, which is the reviewer's literal wording and is the
+# one baseline genuinely independent of granule detection.
+#
+# `baseline_logFC` (residual extrasomatic alone) is the SENSITIVITY arm, kept in the CSV. It is
+# granule-free, which is desirable, but it is defined as "extrasomatic AND not inside a called
+# sphere" and is therefore detection-DEPENDENT. Never label it detection-independent.
 
 if (RUN_AXIS1) {
-  message("[9] axis 1 -- compartment")
+  message("[5] axis 1 -- compartment")
 
   f <- file.path(a3c_dir, "axis1_gene_table.csv")
-  if (need(f, "9")) {
+  if (need(f, "5")) {
     df <- read.csv(f) %>%
       mutate(marker_group = ifelse(is_marker == "True" | is_marker == TRUE,
                                    "Granule markers", "Others"))
-    p <- ggplot(df, aes(x = baseline_logFC, y = granule_enrichment)) +
+    # fall back to the granule-free baseline when reading a pre-`_all` CSV
+    xvar  <- if ("baseline_all_logFC" %in% names(df)) "baseline_all_logFC" else "baseline_logFC"
+    xlab  <- if (xvar == "baseline_all_logFC")
+      "Baseline logFC (all non-somatic RNA vs soma)" else
+      "Baseline logFC (residual extrasomatic vs soma)"
+
+    p <- ggplot(df, aes(x = .data[[xvar]], y = granule_enrichment)) +
       geom_abline(slope = 1, intercept = 0, linetype = "dotted", colour = "grey50") +
       geom_smooth(data = df %>% filter(marker_group == "Others"),
                   method = "lm", se = TRUE, colour = "black", linewidth = 0.75) +
@@ -504,86 +321,246 @@ if (RUN_AXIS1) {
                  stroke = 0.1) +
       facet_wrap(~ sample) +
       scale_fill_manual(values = c("Granule markers" = "#f48488", "Others" = "#a0ccec")) +
-      labs(x = "Baseline logFC (residual extrasomatic vs soma)",
+      labs(x = xlab,
            y = "Granule enrichment logFC (granule vs soma)", fill = NULL,
            caption = paste("Line fitted on NON-markers. Both axes share the soma reference, so",
-                           "their difference is meaningful;\nthe baseline excludes in-granule",
-                           "transcripts, so it is a genuine null rather than a diluted signal.")) +
+                           "their difference is meaningful and the\nsoma term cancels out of it.",
+                           "The baseline is all non-somatic RNA -- the reviewer's wording, and",
+                           "the only\nform independent of granule detection. Including the",
+                           "in-granule transcripts biases the contrast\ntoward zero, so this is",
+                           "also the conservative choice.")) +
       theme_classic() +
       theme(axis.text = element_text(size = 12), axis.title = element_text(size = 13),
             legend.position = "bottom",
             plot.caption = element_text(hjust = 0, size = 9, colour = "grey30"))
     save_fig(p, "a3c_axis1_scatter.jpeg", 9, 5.5)
 
-    p <- ggplot(df, aes(x = marker_group, y = residual, fill = marker_group)) +
-      geom_violin(alpha = 0.7, colour = "grey30") +
-      geom_boxplot(width = 0.15, outlier.size = 0.4, fill = "white") +
+  }
+}
+
+
+# ==============================================================================================
+# 6. A3c -- the non-seed, non-control gene test
+# ==============================================================================================
+#
+# THE LOAD-BEARING PANEL OF SECTION 3, and the only one in it that is not circular. Section [5]'s
+# scatter is marker-anchored: mcDETECT builds a granule by clustering marker transcripts, so the
+# markers sitting above the non-marker line is guaranteed by construction, not evidence.
+#
+# This panel drops every gene that seeded detection (SYN_GENES) or entered nc_filter (the 19-gene
+# published NC list) -- 38 genes -- and plots the remaining 252 by the panel's OWN curated
+# cell-type annotation, written when the probe set was designed. y is the count model's
+# granule-vs-residual logFC, measured WITHIN each 50 um spot, so a "granules just sit in neuropil"
+# reading cannot produce a separation here.
+#
+# Nearly every gene is negative: a granule sphere is dominated by the transcripts that formed it,
+# so everything else is diluted. The claim is the ORDERING, which is why the zero line is drawn
+# but not emphasised.
+
+if (RUN_NONSEED) {
+  message("[6] non-seed gene test")
+
+  f <- file.path(a3c_dir, "axis1_nonseed_genes.csv")
+  if (need(f, "6")) {
+    NEURONAL <- c("Excitatory neurons", "Inhibitory neurons")
+    GLIAL    <- c("Astrocytes", "Oligodendrocytes", "Microglia", "OPC",
+                  "Pericytes/Endothelial", "Fibroblast")
+
+    ns <- read.csv(f) %>%
+      filter(cell_type %in% c(NEURONAL, GLIAL)) %>%
+      mutate(klass = ifelse(cell_type %in% NEURONAL, "Neuronal", "Glial / vascular"),
+             cell_type = factor(cell_type, levels = c(NEURONAL, GLIAL)))
+
+    p <- ggplot(ns, aes(x = cell_type, y = logFC_granule_vs_residual, fill = klass)) +
+      geom_hline(yintercept = 0, linetype = "dashed", colour = "grey40") +
+      geom_boxplot(outlier.shape = NA, alpha = 0.85, width = 0.65) +
+      geom_point(shape = 21, size = 1.6, colour = "black", stroke = 0.15,
+                 position = position_jitter(width = 0.12, height = 0), alpha = 0.9) +
       facet_wrap(~ sample) +
-      scale_fill_manual(values = c("Granule markers" = "#f48488", "Others" = "#a0ccec")) +
-      labs(x = NULL, y = "residual from the non-marker line", fill = NULL,
-           caption = paste("Divergence, not excess: the reviewer's wording is 'exceed OR DIVERGE",
-                           "FROM'. A residual test is invariant\nto the compositional rescaling",
-                           "that makes an absolute |logFC| comparison fragile.")) +
-      theme_classic() + theme(legend.position = "none",
-                              plot.caption = element_text(hjust = 0, size = 9, colour = "grey30"))
-    save_fig(p, "a3c_axis1_residual.jpeg", 8, 5)
+      scale_fill_manual(values = c("Neuronal" = "#f48488", "Glial / vascular" = "#a0ccec")) +
+      labs(x = NULL, y = "granule vs surrounding\nnon-somatic RNA (log2)",
+           fill = NULL,
+           caption = paste("Every gene shown seeded no detection and entered no filter: the 20",
+                           "marker genes and the 19 negative\ncontrols are excluded. The",
+                           "annotation is the panel's own curated design sheet.",
+                           "\nThe dashed line at zero is equal representation inside and",
+                           "outside granules; shares are computed over these 252 genes only.")) +
+      theme_bw() +
+      theme(axis.text.x = element_text(angle = 30, hjust = 1),
+            legend.position = "bottom",
+            plot.caption = element_text(hjust = 0, size = 9, colour = "grey30"))
+    save_fig(p, "a3c_nonseed_celltype.jpeg", 11, 6.2)
   }
 }
 
 
 # ==============================================================================================
-# 10. A3c -- Axis 2, conditions and regions
+# 7. A3d -- the local sampling null
 # ==============================================================================================
 #
-# RANKINGS ONLY. The three layers differ enormously in counts per spot and in sparsity, and a rank
-# test's power tracks that -- which is why the published ambient and cell layers show 253 and 234
-# significant genes against the granule layer's 161. Plotting those tallies would invite the
-# reading "the authors' ambient layer yields more DE genes than their granule layer". So this
-# section plots correlations and logFC agreement, never counts.
+# Section [6] shows that granules RANK neuronal genes above glial ones. This one asks the
+# reviewer's question in its literal form -- if a granule were a random sample of the non-somatic
+# RNA in its own 10 um neighbourhood, could it look like this? -- and answers it with a
+# probability rather than an ordering.
 #
-# And n = 1 vs 1: the WT/AD contrast here is descriptive.
+# (a) is the effect size: how far each gene's share of granule RNA departs from what the local
+# RNA predicts. Unlike section [6]'s panel, zero here is not merely a reference line -- it is the
+# reviewer's hypothesis. A gene at zero is exactly as common inside granules as in the material
+# 10 um around them.
+#
+# (b) is the test. T is the gap between the neuronal and glial medians in (a), recomputed on
+# every one of the simulated sections in which granules ARE random local samples. The null is a
+# spike because a thousand redraws produce nothing remotely like the observation; that the spike
+# looks small next to the observed line is the entire point of the panel, not a scaling problem.
+#
+# ONE null: the permutation (pool each 10 um square's granule and residual transcripts, relabel
+# which are "granule"). The literal multinomial variant was retired -- see the A3d block in
+# a3_config.py, which holds the canonical mode name that R cannot import.
 
-if (RUN_AXIS2) {
-  message("[10] axis 2 -- conditions and regions")
+if (RUN_LOCALNULL) {
+  message("[7] local sampling null")
 
-  f <- file.path(a3c_dir, "axis2_layer_correlation.csv")
-  if (need(f, "10")) {
-    cr <- read.csv(f) %>% mutate(pair = paste(layer_a, "vs", layer_b))
-    p <- ggplot(cr, aes(x = reorder(pair, spearman_rho), y = spearman_rho)) +
-      geom_col(fill = "#4f7fa8") + coord_flip() +
-      geom_text(aes(label = sprintf("%.3f", spearman_rho)), hjust = -0.15, size = 3.5) +
-      scale_y_continuous(limits = c(0, 1.05)) +
-      labs(x = NULL, y = "Spearman rho of WT-vs-AD logFC between layers",
-           caption = paste("Rankings only -- significant-gene COUNTS are not comparable across",
-                           "layers, because the layers differ\nin depth and sparsity and a rank",
-                           "test's power tracks that.")) +
-      theme_bw() + theme(plot.caption = element_text(hjust = 0, size = 9, colour = "grey30"))
-    save_fig(p, "a3c_axis2_layer_correlation.jpeg", 7.5, 4)
+  fg <- file.path(a3d_dir, "a3d_local_null_genes.csv")
+  fn <- file.path(a3d_dir, "a3d_local_null_group_null.csv")
+  fk <- file.path(a3d_dir, "a3d_local_null_group.csv")
+  if (need(fg, "7") && need(fn, "7") && need(fk, "7")) {
+    NEURONAL <- c("Excitatory neurons", "Inhibitory neurons")
+    GLIAL    <- c("Astrocytes", "Oligodendrocytes", "Microglia", "OPC",
+                  "Pericytes/Endothelial", "Fibroblast")
+
+    gn_all <- read.csv(fg)
+    n_gene <- length(unique(gn_all$gene))           # 252, read off the table not typed in
+    gn <- gn_all %>%
+      filter(cell_type %in% c(NEURONAL, GLIAL)) %>%
+      mutate(klass = ifelse(cell_type %in% NEURONAL, "Neuronal", "Glial / vascular"),
+             cell_type = factor(cell_type, levels = c(NEURONAL, GLIAL)))
+
+    pa <- ggplot(gn, aes(x = cell_type, y = log2_obs_over_exp, fill = klass)) +
+      geom_hline(yintercept = 0, linetype = "dashed", colour = "grey40") +
+      geom_boxplot(outlier.shape = NA, alpha = 0.85, width = 0.65) +
+      geom_point(shape = 21, size = 1.6, colour = "black", stroke = 0.15,
+                 position = position_jitter(width = 0.12, height = 0), alpha = 0.9) +
+      facet_wrap(~ sample) +
+      scale_fill_manual(values = c("Neuronal" = "#f48488", "Glial / vascular" = "#a0ccec")) +
+      labs(x = NULL, fill = NULL,
+           y = "observed / expected in granules,\nagainst the local 10 um pool (log2)",
+           title = "a  Departure from a random local sample, gene by gene") +
+      theme_bw() +
+      theme(axis.text.x = element_text(angle = 30, hjust = 1),
+            legend.position = "bottom",
+            plot.title = element_text(size = 11, face = "bold"))
+
+    tn <- read.csv(fn)
+    n_rep <- nrow(tn) / length(unique(tn$sample))   # not hardcoded: read off the null itself
+    tk  <- read.csv(fk)
+    lab <- tk %>%
+      mutate(txt = sprintf("observed T = %.2f\n(%.0f null SD away)", T_obs, z))
+
+    pb <- ggplot(tn, aes(x = T)) +
+      geom_histogram(bins = 40, fill = "grey75", colour = "#e9ecef", linewidth = 0.2) +
+      geom_vline(data = tk, aes(xintercept = T_obs), colour = "#b03030", linewidth = 0.7) +
+      geom_text(data = lab, aes(x = -Inf, y = Inf, label = txt),
+                hjust = -0.05, vjust = 1.35, size = 3.0, colour = "#b03030", lineheight = 0.95) +
+      facet_wrap(~ sample) +
+      expand_limits(x = c(0, max(tk$T_obs) * 1.10)) +
+      labs(x = paste("T = median log2(obs/exp) in neuronal genes",
+                     "minus the same in glial and vascular genes"),
+           y = "draws under the hypothesis",
+           title = "b  The same statistic under the hypothesis that granules are random local samples",
+           caption = paste(sprintf("Grey: %s draws of T under the hypothesis that a granule's",
+                                   format(n_rep, big.mark = ",", scientific = FALSE)),
+                           "contents are a random relabelling of it and\nthe RNA in its own 10 um",
+                           "square, keeping the number of transcripts per granule fixed.",
+                           "Red: the observed value.\nAll", n_gene, "genes tested seeded no",
+                           "detection and entered no filter, so nothing here follows\nfrom how a",
+                           "granule was defined.")) +
+      theme_classic() +
+      theme(plot.title = element_text(size = 11, face = "bold"),
+            plot.caption = element_text(hjust = 0, size = 9, colour = "grey30"),
+            strip.background = element_blank())
+
+    p <- patchwork::wrap_plots(pa, pb, ncol = 1, heights = c(1.15, 1))
+    save_fig(p, "a3d_local_null.jpeg", 11, 9.4)
   }
+}
 
-  f <- file.path(a3c_dir, "axis2_wt_ad_by_layer.csv")
-  if (need(f, "10")) {
-    a2 <- read.csv(f)
-    w <- a2 %>% select(gene, layer, logFC_AD_vs_WT, is_marker) %>%
-      pivot_wider(names_from = layer, values_from = logFC_AD_vs_WT)
-    if (all(c("granule", "residual_extrasomatic") %in% names(w))) {
-      w$marker_group <- ifelse(w$is_marker == "True" | w$is_marker == TRUE,
-                               "Granule markers", "Others")
-      p <- ggplot(w, aes(x = residual_extrasomatic, y = granule)) +
-        geom_abline(slope = 1, intercept = 0, linetype = "dotted", colour = "grey50") +
-        geom_point(aes(fill = marker_group), shape = 21, size = 2, colour = "black",
-                   stroke = 0.1) +
-        scale_fill_manual(values = c("Granule markers" = "#f48488", "Others" = "#a0ccec")) +
-        labs(x = "AD vs WT logFC, residual extrasomatic (detection-independent)",
-             y = "AD vs WT logFC, granule layer", fill = NULL,
-             caption = paste("If the AD granule signal were an ambient artefact these would lie",
-                             "on the dotted line.\nn = 1 vs 1 section: descriptive.")) +
-        theme_classic() + theme(legend.position = "bottom",
-                                plot.caption = element_text(hjust = 0, size = 9,
-                                                            colour = "grey30"))
-      save_fig(p, "a3c_axis2_granule_vs_ambient.jpeg", 7, 5.5)
+
+# ============================================================================================== #
+# 8. A3e -- ambient pseudo-granules, put back through the detector
+# ============================================================================================== #
+# The most direct answer in the whole response, and the one panel a reader can grasp without any
+# statistics: three groups of real granules, identical in every transcript position, differing only
+# in what the transcripts are CALLED, run through the published pipeline again.
+#
+#   untouched  nothing changed         -- must come back at ~100%, or nothing else here is readable
+#   scramble   own labels permuted     -- composition preserved exactly, geometry scrambled
+#   ambient    labels drawn from the surrounding residual RNA
+#
+# The `scramble` bar is what makes the `ambient` bar mean something. Both arms scramble which point
+# carries which gene; only `ambient` also changes the composition. So the gap between them is the
+# compositional effect on its own, and the gap between `untouched` and `scramble` is whatever the
+# scrambling costs by itself.
+
+if (RUN_PSEUDO) {
+  message("[8] pseudo-granule re-detection")
+
+  fr <- file.path(a3e_dir, "a3e_redetection_rate.csv")
+  fm <- file.path(a3e_dir, "a3e_marker_shift.csv")
+  if (need(fr, "8")) {
+    arm_lab <- c(untouched = "Untouched\n(control)",
+                 scramble  = "Own labels\npermuted",
+                 ambient   = "Labels drawn from\nlocal ambient RNA")
+    arm_col <- c(untouched = "#4f7fa8", scramble = "#b6b6b6", ambient = "#b03030")
+
+    # `is_primary` is written by the notebook from a3_config.PSEUDO_MATCH_PRIMARY -- R cannot
+    # import a3_config, so the choice travels in the data rather than being retyped here.
+    # The table also carries an `excluded_contaminated` row -- untouched granules that shared a
+    # rewritten transcript with a converted one. They are reported in the notebook and are not a
+    # study arm, so they are dropped here rather than plotted as an unlabelled fourth bar.
+    rr <- read.csv(fr) %>%
+      filter(is_primary == "True" | is_primary == TRUE, arm %in% names(arm_lab)) %>%
+      mutate(arm = factor(arm, levels = names(arm_lab)))
+    stopifnot(nrow(rr) == length(unique(rr$sample)) * length(arm_lab))
+
+    pa <- ggplot(rr, aes(x = arm, y = rate, fill = arm)) +
+      geom_col(width = 0.68, alpha = 0.9) +
+      geom_text(aes(label = sprintf("%.1f%%", 100 * rate)), vjust = -0.45, size = 3.4) +
+      facet_wrap(~ sample) +
+      scale_y_continuous(labels = scales::percent, limits = c(0, 1.08),
+                         expand = expansion(mult = c(0, 0.02))) +
+      scale_x_discrete(labels = arm_lab) +
+      scale_fill_manual(values = arm_col, guide = "none") +
+      labs(x = NULL, y = "re-detected by mcDETECT",
+           title = "a  Granules whose transcripts were relabelled, put back through the detector") +
+      theme_bw() +
+      theme(plot.title = element_text(size = 11, face = "bold"),
+            strip.background = element_blank())
+
+    p <- pa
+    if (file.exists(fm)) {
+      mk <- read.csv(fm) %>%
+        filter(arm %in% names(arm_lab)) %>%
+        mutate(arm = factor(arm, levels = names(arm_lab)))
+      pb <- ggplot(mk, aes(x = n_marker, y = frac, colour = arm)) +
+        geom_step(linewidth = 0.7) +
+        facet_wrap(~ sample) +
+        scale_colour_manual(values = arm_col, labels = arm_lab, name = NULL) +
+        labs(x = "marker transcripts in the sphere after relabelling",
+             y = "fraction of granules",
+             title = "b  Why: the local ambient supplies too few marker transcripts",
+             caption = paste("mcDETECT seeds DBSCAN on the 20 granule markers and needs",
+                             "min_samples = 3 of them within eps = 1.5 um.\nEvery transcript keeps",
+                             "its own position in all three arms, so local density is identical",
+                             "throughout and\ncomposition is the only thing that varies.")) +
+        theme_bw() +
+        theme(plot.title = element_text(size = 11, face = "bold"),
+              plot.caption = element_text(hjust = 0, size = 9, colour = "grey30"),
+              legend.position = "bottom", strip.background = element_blank())
+      p <- patchwork::wrap_plots(pa, pb, ncol = 1, heights = c(1, 1.15))
     }
+    save_fig(p, "a3e_pseudo_granules.jpeg", 10, if (file.exists(fm)) 9.0 else 4.6)
   }
 }
+
 
 message("done -- figures in ", fig_dir)
