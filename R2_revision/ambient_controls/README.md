@@ -218,7 +218,7 @@ output/
 │                 a3d_local_null_calibration.csv, a3d_local_null_negative_control.csv
 ├── a3e/          a3e_relabel_<sample>.parquet (THE PATCH -- this is what goes to HGCC),
 │                 a3e_pool_ladder.csv, a3e_relabel_scope.csv, a3e_relabel_audit.csv,
-│                 a3e_precheck.csv,
+│                 a3e_precheck.csv, a3e_match_floor.csv,
 │                 a3e_redetection_rate.csv, a3e_marker_shift.csv,
 │                 detect_<sample>/{spheres,sphere_dict}.parquet, funnel_by_gene.csv, run_info.csv
 └── figures/      everything A3_figures.R draws
@@ -557,7 +557,7 @@ observed/expected ratio exceeds `LOCAL_NULL_EFFECT_THR`.
 | 3 | the local ambient pool — a 5 µm disc centred on the granule — the radius ladder, and the draw |
 | 4 | the patch it writes |
 | 5 | a local pre-check, before spending four hours on a node |
-| 6 | *(second pass)* what came back through the detector |
+| 6 | *(second pass)* what came back through the detector, and what "re-detected" means |
 | 7 | correctness gates |
 
 **The most direct answer in A3.** A3d states the reviewer's hypothesis as a model and rejects it in
@@ -637,6 +637,44 @@ so a whole ladder is cheap. **Measured on the real sections:**
 
 against a median granule of 6 transcripts. 5 µm is the tightest radius that keeps both sections
 above 99%; 4 µm would lose 3% of AD.
+
+### What counts as "re-detected"
+
+A granule counts as re-detected when the re-run produced a sphere that **(1)** contains at least
+`PSEUDO_PROVENANCE_FRAC` = half of that granule's own transcripts, and **(2)** contains more of that
+granule's transcripts than of any other granule's. Plainly: *the detector rebuilt a sphere on the
+same transcripts, and that sphere is more that granule than anything else.*
+
+Geometry cannot say this. It cannot separate "the detector called this object again" from "the
+detector called something else nearby", and 80% of granules are untouched and will certainly be
+called. The loophole is **measured** — matching the published granules against themselves, where a
+credit from any sphere but the granule's own is one it collects for free:
+
+| criterion | WT | AD |
+|---|---|---|
+| `center_in` | 6.93% | 8.20% |
+| `intersect` | 33.91% | 38.98% |
+| `merge` | 0.34% | 0.65% |
+| condition (1) alone | 5.98% | 7.82% |
+| **(1) and (2) — the primary** | **0.25%** | **0.28%** |
+
+**Condition (2) is the one that matters, and that was not obvious.** (1) alone was expected to solve
+it and does not: published granules overlap so heavily that a neighbour's sphere already holds half
+of a given granule's transcripts 6–8% of the time — no better than `center_in`. Requiring the sphere
+to be *mostly* that granule takes it to a quarter of a percent, below even `merge`, and costs
+nothing: a granule is credited by its own sphere 100.000% of the time at every threshold from 0.5
+to 1.0. `merge` reaches a low floor the other way, by being strict enough to miss genuine
+re-detections, which is why it is reported but never primary.
+
+All four criteria are scored into `a3e_redetection_rate.csv`, and the floor table is regenerated
+from data into `a3e_match_floor.csv` rather than trusted from this README. Gate (g) asserts the
+primary beats `center_in`.
+
+`a3_common.provenance_match` has to know whose transcripts each point is, so section 2 runs a
+**second** ownership pass over all granules. It must not replace the converted-only one:
+`granule_members` assigns to the nearest granule *among those passed in*, so recomputing it over all
+681 K would move transcripts to untouched neighbours and desynchronise the gates from the patch
+already written.
 
 ### The membership trap
 
@@ -826,6 +864,7 @@ one thing in that notebook worth switching off while debugging.
 | **"granules are not random samples of the RNA around them"** — gene by gene, and as one neuronal-minus-glial contrast | `a3d/a3d_local_null_genes.csv`, `a3d/a3d_local_null_group.csv` |
 | "…and the test is not simply over-powered" | `a3d/a3d_local_null_negative_control.csv` (gate (d): exchangeable halves, nothing called) |
 | **"pseudo-granules built from local ambient RNA are not re-detected"** | `a3e/a3e_redetection_rate.csv` (`untouched` calibrates it, `scramble` isolates composition) |
+| "…and 're-detected' means the same transcripts, not merely the same place" | `a3e/a3e_match_floor.csv` (0.25% / 0.28% false-credit floor, against `center_in`'s 6.93% / 8.20%) |
 | "…and the reason is that local ambient supplies too few marker transcripts" | `a3e/a3e_marker_shift.csv`, `a3e/a3e_relabel_audit.csv` |
 
 ---
