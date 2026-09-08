@@ -14,9 +14,10 @@ validation/
 # Other analysis
 other_analysis/
 
-# R2 revision code (R2_revision/) is TRACKED by default so it transfers to HGCC.
-# Its generated outputs/logs are already covered by the global output/, logs/ and
-# *.log rules elsewhere in this file, so no entry is needed here.
+# R2 revision code — round-2 revision analysis, complete and locked as of 2026-09-08.
+# Untracked deliberately (not public). The files remain on disk; they were removed from
+# the index with `git rm -r --cached R2_revision/`, so commits before that still contain them.
+R2_revision/
 
 # Plans / manuscript / reviewer materials (unpublished — never commit)
 plans/
@@ -38,6 +39,8 @@ __pycache__/
 # R
 .Rhistory
 .RData
+# the default PDF device Rscript opens at the repo root; never wanted
+Rplots.pdf
 
 # Jupyter
 .ipynb_checkpoints/
