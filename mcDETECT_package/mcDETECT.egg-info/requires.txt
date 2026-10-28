@@ -1,8 +1,0 @@
-anndata
-miniball
-numpy
-pandas
-rtree
-scikit-learn
-scipy
-shapely

@@ -108,3 +108,5 @@ We are continuing adding new features. Bug reports or feature requests are welco
 Last update: 04/15/2026, version 2.1.6.
 
 ## Citation
+
+Citation details will be added upon publication in *Nature Biomedical Engineering*.

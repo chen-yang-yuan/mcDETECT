@@ -1,38 +1,34 @@
-# Useless codes
+# Retired code and local tool builds
 code/old/
 code/utils/baysor_macos-latest_x64_build
 
-# Data
+# Data and results (large; not distributed with the repository)
 data/
-
-# Output
 output/
-
-# External validation
-validation/
-
-# Other analysis
-other_analysis/
-
-# R2 revision code — round-2 revision analysis, complete and locked as of 2026-09-08.
-# Untracked deliberately (not public). The files remain on disk; they were removed from
-# the index with `git rm -r --cached R2_revision/`, so commits before that still contain them.
-R2_revision/
-
-# Plans / manuscript / reviewer materials (unpublished — never commit)
-plans/
-
-# Simulation related
 simulation/simulated_data/
 simulation/output/
 
-# Figure related
+# Analyses kept private (local only)
+validation/
+other_analysis/
+R2_revision/
+
+# Manuscript, reviewer materials and figure-assembly scripts (never commit)
+plans/
 **/figures.*
 **/figures_response.*
+
+# Local development / AI-assistant files
+CLAUDE.md
+.claude/
+Makefile
 
 # Python
 __pycache__/
 *.pyc
+*.egg-info/
+build/
+dist/
 .venv/
 .env
 
